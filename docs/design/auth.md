@@ -1,10 +1,11 @@
 # 인증 기능 설계 문서
 
-- 문서 버전: v0.1
+- 문서 버전: v0.2
 - 작성일: 2026-10-05
 - 상태: 초안
 - 요구사항: `docs/requirements/auth.md` (v0.2)
-- 공통 설계: `docs/design/architecture.md` (v0.4)
+- 공통 설계: `docs/design/architecture.md` (v0.5)
+- 변경 이력: v0.2 — 구현 반영: 조건 검사 `ck_users_failed_pin_count` 제거(애플리케이션이 5 이상을 저장하지 않음), 로그인 행 조건부 갱신·삭제를 저장소(LoginSessionRepository)로 통합
 
 ---
 
@@ -191,7 +192,7 @@ App ──API────▶ LoginTokenFilter ─▶ LoginSessionService(독립 
 | BR-003 | PIN 숫자 6자리 | 요청 검증, DB | 요청 검증(숫자 6자리) + 조건 검사 `ck_users_pin_format` | 400 VALIDATION_FAILED / 운영자 SQL 거절 |
 | BR-005 | 한 계정 한 기기 | 서비스, DB | 로그인 성공 시 기존 `ACTIVE` 행 종료 + 조건부 유일 `ux_login_session_user_active` | — |
 | BR-006 | 마지막 사용 후 30일, 사용 시 연장 | 인증 필터 | `last_used_at` + 30일로 만료 판단, 인증 요청마다 `last_used_at` 갱신 | 401 AUTH_SESSION_EXPIRED |
-| BR-007 | 5회 연속 실패 → 5분 잠금 | 서비스, DB | 계정 변경 잠금 후 실패 횟수 증가, 5회면 `locked_until` 설정. 조건 검사 `ck_users_failed_pin_count`(0~4) | 다음 시도부터 401 AUTH_ACCOUNT_LOCKED |
+| BR-007 | 5회 연속 실패 → 5분 잠금 | 서비스, DB | 계정 변경 잠금 후 실패 횟수 증가, 5회면 `locked_until` 설정 | 다음 시도부터 401 AUTH_ACCOUNT_LOCKED |
 | BR-008 | 성공·잠금 해제 후 0부터 | 서비스 | 성공 시 0, 잠글 때 0으로 되돌려 저장(DEC-AUTH-006) | — |
 | BR-009 | 잠금 중 올바른 PIN도 거절 | 서비스 | PIN 비교 전에 잠금 확인 | 401 AUTH_ACCOUNT_LOCKED |
 | BR-010 | 무엇이 틀렸는지 숨김 | 서비스 | 없는 아이디와 틀린 PIN에 같은 에러 코드·메시지 | 401 AUTH_INVALID_CREDENTIALS |
@@ -355,7 +356,6 @@ users 1 ──── N login_session          (참조: 함께 삭제)
 - 유일 `ux_users_login_id`: `login_id` (대소문자 구분) — BR-002
 - 조건 검사 `ck_users_login_id_format`: `login_id`가 패턴 `^[A-Za-z]+\.[A-Za-z]+([2-9]|[1-9][0-9]+)?$`와 일치 — `이름.성`, 중복 번호는 2부터 (BR-002, 부록 C-3)
 - 조건 검사 `ck_users_pin_format`: `pin`이 패턴 `^[0-9]{6}$`와 일치 — BR-003
-- 조건 검사 `ck_users_failed_pin_count`: `0 <= failed_pin_count <= 4` — 5회째에 잠그면서 0으로 되돌리므로 5 이상은 저장되지 않는다 (BR-007, DEC-AUTH-006)
 - DB 자동 동작 `trg_users_pin_revoke_login`: `pin` 값이 바뀌면, 그 사용자의 `status = ACTIVE`인 `login_session`을 `status = REVOKED`, `ended_at` = 현재 시각으로 바꾼다 (BR-011, DEC-AUTH-008)
 
 #### login_session — 근거: DATA-002
@@ -470,8 +470,7 @@ users 1 ──── N login_session          (참조: 함께 삭제)
 | auth | LoginSessionService | 서비스 (독립 트랜잭션) | 인증 필터의 토큰 조회·상태 판단·유지 기간 연장 |
 | common | LoginTokenFilter | 인증 필터 | 토큰 추출, LoginSessionService 호출, 사용자 ID 설정, 401 응답 |
 | auth | UserRepository | 저장소 | `login_id`로 계정 변경 잠금 조회, 실패 횟수·잠금 갱신 |
-| auth | LoginSessionRepository | 저장소 | 로그인 행 저장·삭제, 토큰 해시로 조회, 활성 로그인 조회 |
-| auth | LoginSessionQueryRepository | 조회 저장소 | `last_used_at` 조건부 갱신, 30일 지난 끝난 행 일괄 삭제 |
+| auth | LoginSessionRepository | 저장소 | 로그인 행 저장·삭제, 토큰 해시로 조회, 활성 로그인 조회, `last_used_at` 조건부 갱신, 30일 지난 끝난 행 일괄 삭제 (한 테이블의 단순 조건이라 저장소, 공통 10.3) |
 
 ### 10.2 구현 순서
 | 순서 | 작업 | 관련 요구사항 | 완료 기준 |

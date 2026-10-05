@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.4
+- 문서 버전: v0.5
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -8,6 +8,7 @@
   - v0.2 — 기술에 묶인 내용을 1.4(기술 스택)와 10장(기술 대응표, 코드 구조)으로 모으고, 나머지는 기술 중립 용어로 바꿈
   - v0.3 — 모든 PK를 UUIDv7로 통일 (DEC-ARCH-010). 순서는 ID가 아니라 시각 컬럼으로 정함
   - v0.4 — 인증 방식을 "로그인 토큰 + 서버 조회"로 변경(DEC-ARCH-011, DEC-ARCH-005 대체). 에러 응답에 `details` 추가. DB 자동 동작 개념, users ID의 DB 생성 예외, 계정 관리 SQL 절차 추가
+  - v0.5 — 인증 구현 반영: 한 테이블의 단순 조건부 갱신은 JPA(10.3), UUIDv7 생성 수단 확정(D-TODO-ARCH-006), `users.id`는 버전 무관 `uuid_v7()` 함수, 현재 시각은 주입한 시계(10.1)
 
 ---
 
@@ -327,6 +328,8 @@ API 요청: Authorization: Bearer <로그인 토큰>
 - 전역 예외 처리기 한 곳이 모든 예외를 8.1 형식으로 바꾼다.
   - 비즈니스 예외 → 에러 코드의 상태
   - 요청 검증 실패, JSON 형식 오류, 타입 불일치(정수 필드에 소수 포함, UUID 형식 오류) → 400 VALIDATION_FAILED
+  - 웹 프레임워크가 판단한 그 밖의 요청 오류(지원하지 않는 Content-Type·HTTP 메서드 등) → 400 VALIDATION_FAILED, ERROR 로그를 남기지 않음
+  - 정의되지 않은 URL → 404 NOT_FOUND
   - 기능 설계에서 "제약 위반 변환"으로 지정한 DB 제약 위반 → 지정한 에러 코드
   - 그 밖의 예외(지정하지 않은 DB 제약 위반 포함) → 500 INTERNAL_ERROR, ERROR 로그
 - 인증 필터에서 나는 401도 같은 형식으로 응답한다.
@@ -366,7 +369,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 트랜잭션 | 서비스 메서드의 `@Transactional` |
 | 변경 잠금 | JPA `@Lock(LockModeType.PESSIMISTIC_WRITE)` 조회 → PostgreSQL `SELECT ... FOR UPDATE` |
 | 독립 트랜잭션 | 별도 빈의 `@Transactional(propagation = Propagation.REQUIRES_NEW)` 메서드 (같은 클래스 안 호출은 적용되지 않으므로 반드시 별도 빈) |
-| 조건부 일괄 갱신 | jOOQ `UPDATE ... WHERE ...` / `DELETE ... WHERE ...` + `RETURNING`으로 처리한 ID 확인 |
+| 조건부 일괄 갱신 | 한 테이블의 단순 조건이면 Spring Data JPA `@Modifying @Query`(JPQL `update`/`delete`, 반환값으로 처리한 행 수 확인). 조인·서브쿼리가 필요하면 jOOQ `UPDATE ... WHERE ...` / `DELETE ... WHERE ...` + `RETURNING` (10.3) |
 | 제약 위반 변환 | 저장 후 즉시 `flush`하고 `DataIntegrityViolationException`의 제약 이름을 비교해 비즈니스 예외로 변환 |
 | 확정 후 오류 응답 | 서비스가 예외 대신 결과 값(성공/실패 사유)을 반환해 트랜잭션을 정상 커밋하고, API 진입점이 실패 결과를 비즈니스 예외로 바꿔 응답 (`@Transactional`은 예외 시 롤백하므로) |
 | DB 자동 동작 | PostgreSQL 트리거(`CREATE TRIGGER trg_... AFTER UPDATE OF <컬럼>` + PL/pgSQL 함수). 스키마 변경 스크립트로 만든다 |
@@ -375,8 +378,8 @@ API 요청: Authorization: Bearer <로그인 토큰>
 **논리 타입 (6.2)**
 | 논리 타입 | PostgreSQL | Kotlin |
 |----------|-----------|--------|
-| ID | `uuid` (PK·참조 컬럼 모두. 애플리케이션 생성 테이블은 DB 기본값 없음) | `java.util.UUID`. 엔티티 저장 전에 UUIDv7 생성기로 값을 채운다(Hibernate의 UUIDv7 생성 전략 또는 UUIDv7 라이브러리 — D-TODO-ARCH-006) |
-| ID (DB 생성 예외, `users`) | `uuid DEFAULT <UUIDv7 함수>()`. PostgreSQL 18 이상이면 내장 `uuidv7()`, 미만이면 스키마 변경 스크립트로 UUIDv7 생성 함수를 정의해 쓴다 (D-TODO-ARCH-001에 따라 확정) | `java.util.UUID`. 애플리케이션은 `users`를 만들지 않는다 |
+| ID | `uuid` (PK·참조 컬럼 모두. 애플리케이션 생성 테이블은 DB 기본값 없음) | `java.util.UUID`. `@Id @GeneratedValue @UuidGenerator(style = UuidGenerator.Style.VERSION_7)` (Hibernate 7.4) |
+| ID (DB 생성 예외, `users`) | `uuid DEFAULT uuid_v7()`. `uuid_v7()`은 스키마 변경 스크립트(V1)에 정의한 SQL 함수로, PostgreSQL 버전과 관계없이 동작한다 | `java.util.UUID`. 애플리케이션은 `users`를 만들지 않는다 |
 | 정수 | `integer` | `Int` |
 | 소수(p,s) | `numeric(p,s)` | `BigDecimal` |
 | 문자열(n) | `varchar(n)` | `String` |
@@ -398,6 +401,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 **기타**
 | 용어 | 현재 구현 |
 |-----|---------|
+| 현재 시각 | `java.time.Clock` 빈(`Clock.systemUTC()`)을 주입받아 `clock.instant()`로 얻는다. 테스트는 시간을 앞으로 돌릴 수 있는 `MutableClock`을 `@Primary` 빈으로 바꿔 끼운다. 단, DB 자동 동작이 기록하는 시각(`ended_at`)은 DB의 `now()` |
 | 요청 검증 (필수, 범위, 소수 자릿수, 길이, 패턴) | Bean Validation: `@NotNull`, `@NotBlank`, `@Min`/`@Max`, `@DecimalMin`/`@DecimalMax`, `@Digits`, `@Size`, `@Pattern` |
 | UUID 형식 검증 (경로 변수·본문 ID) | 컨트롤러 파라미터·DTO 필드를 `UUID` 타입으로 받고, 변환 실패는 전역 예외 처리기에서 400 VALIDATION_FAILED |
 | 정수 필드에 소수 입력 거부 (5장) | Jackson의 "소수를 정수로 받기" 기능(`ACCEPT_FLOAT_AS_INT`)을 끈다 |
@@ -432,8 +436,9 @@ cloud.jjoon.workout
 |-----------|-----|---------|
 | 행 하나를 저장·수정·삭제 | 저장소 | JPA |
 | ID로 단건 조회, 단순 존재 확인, 변경 잠금 조회 | 저장소 | JPA |
+| 한 테이블의 단순 조건부 일괄 갱신·삭제 (예: 상태가 ACTIVE일 때만 갱신) | 저장소 | JPA (`@Modifying @Query`) |
 | 조인, 집계(SUM/COUNT/MAX), 페이지 목록 | 조회 저장소 | jOOQ |
-| 조건부 일괄 갱신 | 조회 저장소 | jOOQ |
+| 조인·서브쿼리가 필요한 조건부 일괄 갱신 | 조회 저장소 | jOOQ |
 
 ### 10.4 이름 규칙
 | 대상 | 규칙 | 예 |
@@ -495,12 +500,12 @@ DELETE FROM users WHERE login_id = 'joonhee.song';
 | DEC-ARCH-013 | 운영자 SQL로 바뀌는 데이터에 따른 규칙(PIN 변경 시 로그인 종료)은 DB 자동 동작(트리거)으로 보장한다. 그 밖의 규칙은 애플리케이션에 둔다 | 운영자가 SQL 한 줄을 빠뜨려도 규칙이 지켜진다(auth BR-011). 애플리케이션을 거치지 않는 변경은 애플리케이션이 알 수 없다 | 운영 절차에 로그인 종료 SQL을 함께 적기: 운영자가 빠뜨리면 규칙이 깨짐 / 요청마다 PIN 비교: 로그인 행에 PIN 정보를 따로 보관해야 함 |
 
 ## 부록 B. 설계 미결정 사항
-- **D-TODO-ARCH-001** 운영 PostgreSQL 버전 결정. 테스트 이미지(`postgres:latest`)를 같은 버전으로 고정한다. 18 이상이면 `users.id` 기본값에 내장 `uuidv7()`를 쓴다. (영향: 1.4, 10.1, 10.5, DEC-ARCH-012)
+- **D-TODO-ARCH-001** 운영 PostgreSQL 버전 결정. 테스트 이미지(`postgres:latest`)를 같은 버전으로 고정한다. (`users.id`는 버전과 무관한 `uuid_v7()` 함수를 쓰므로 버전에 묶이지 않는다) (영향: 1.4, 10.5)
 - **D-TODO-ARCH-002** 배포 환경(서버, TLS 종료 위치, DB 백업과 암호화, 운영자 DB 접근 경로와 권한) 결정. (영향: 2.4, 7.7, 9장)
 - **D-TODO-ARCH-003** ~~Access/Refresh Token 만료 시간~~ **결정됨 (v0.4):** 로그인 토큰 하나, 마지막 사용 후 30일 (auth BR-006, DEC-ARCH-011)
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
 - **D-TODO-ARCH-005** DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문(부분 인덱스, 트리거, PL/pgSQL 함수)을 읽지 못하면, 해당 구문을 코드 생성에서 무시하도록 설정하거나 컨테이너 기반 생성으로 바꾼다. 첫 구현 때 확인한다. (영향: DEC-ARCH-002)
-- **D-TODO-ARCH-006** UUIDv7 생성 수단 확정. Spring Boot 4.1에 포함된 Hibernate가 UUIDv7 생성 전략을 지원하면 그것을 쓰고, 아니면 UUIDv7 라이브러리를 추가한다(1.4에 반영). 첫 구현 때 확인한다. (영향: 10.1, DEC-ARCH-010)
+- **D-TODO-ARCH-006** ~~UUIDv7 생성 수단 확정~~ **결정됨 (인증 구현 시 확인):** Spring Boot 4.1.1에 포함된 Hibernate 7.4.5의 `UuidGenerator.Style.VERSION_7`을 쓴다. 라이브러리 추가 없음 (10.1)
 
 ## 부록 C. 요구사항 피드백
 - ~~인증 요구사항 명세서가 없다~~ **해결 (v0.4):** `docs/requirements/auth.md` 작성됨.
