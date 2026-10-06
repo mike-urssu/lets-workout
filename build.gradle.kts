@@ -4,10 +4,11 @@ plugins {
     id("org.springframework.boot") version "4.1.1"
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("plugin.jpa") version "2.3.21"
+    id("com.google.cloud.tools.jib") version "3.5.4"
 }
 
 group = "cloud.jjoon"
-version = "0.0.1-SNAPSHOT"
+version = "1.0.0" // semantic version; image tag is <version>-<git sha> (Jenkinsfile)
 description = "backend"
 
 java {
@@ -56,4 +57,21 @@ allOpen {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Image name and registry credentials come from CI (Jenkinsfile): ./gradlew jib -Djib.to.image=...
+jib {
+    from {
+        image = "eclipse-temurin:21-jre"
+    }
+    to {
+        auth {
+            username = System.getenv("GHCR_USER")
+            password = System.getenv("GHCR_TOKEN")
+        }
+    }
+    container {
+        user = "501:20" // non-root
+        ports = listOf("8080")
+    }
 }

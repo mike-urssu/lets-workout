@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.5
+- 문서 버전: v0.6
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -9,6 +9,7 @@
   - v0.3 — 모든 PK를 UUIDv7로 통일 (DEC-ARCH-010). 순서는 ID가 아니라 시각 컬럼으로 정함
   - v0.4 — 인증 방식을 "로그인 토큰 + 서버 조회"로 변경(DEC-ARCH-011, DEC-ARCH-005 대체). 에러 응답에 `details` 추가. DB 자동 동작 개념, users ID의 DB 생성 예외, 계정 관리 SQL 절차 추가
   - v0.5 — 인증 구현 반영: 한 테이블의 단순 조건부 갱신은 JPA(10.3), UUIDv7 생성 수단 확정(D-TODO-ARCH-006), `users.id`는 버전 무관 `uuid_v7()` 함수, 현재 시각은 주입한 시계(10.1)
+  - v0.6 — CI/CD 추가: 컨테이너 이미지 + 레지스트리 + CI 서버 + 서버 1대 compose 배포(2.4, 10.8), PostgreSQL 18 확정(D-TODO-ARCH-001)
 
 ---
 
@@ -44,6 +45,10 @@
 | jOOQ 코드 생성 (Gradle 플러그인, DDL 기반) | jOOQ와 동일 | Flyway 스크립트를 읽어 테이블 클래스를 만든다. 빌드에 DB가 필요 없다 (DEC-ARCH-002) | 실행 중인 DB에서 생성: 빌드에 DB나 컨테이너가 필요 |
 | Spring Security | Boot 관리, **추가** | 인증 필터 체인, 인증 실패 처리, 경로별 인증 적용을 표준 구조로 제공한다. 토큰 조회 필터 하나만 직접 만든다 (DEC-ARCH-011) | 보안 라이브러리 없이 필터 직접 구현: 경로별 적용·예외 처리까지 직접 만들어야 함 |
 | Bean Validation | Boot 관리, **추가** | 요청 검증을 선언적으로 처리 | 서비스에서 직접 검증: 검증 코드가 흩어짐 |
+| 컨테이너 이미지 (Jib Gradle 플러그인, eclipse-temurin 21 JRE 기반) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
+| GitHub Container Registry (GHCR) | — | 사용자 결정. 이미지 저장소 | — |
+| Jenkins (Multibranch Pipeline) | — | 사용자 결정. 모든 브랜치 테스트, master만 이미지 배포 (10.8) | — |
+| Docker Compose | — | 서버 1대에 앱과 DB를 함께 띄운다. 배포 = 이미지 태그 교체 후 재기동 (10.8) | Kubernetes: 지금 규모에 운영 부담이 큼 |
 | Testcontainers (PostgreSQL) | 저장소 설정 | 테스트가 운영과 같은 DB 엔진에서 돈다. DB 제약과 트리거까지 검증 | 내장 DB(H2): 운영 DB 전용 기능을 검증할 수 없음 |
 
 ### 1.5 설계 원칙
@@ -124,7 +129,8 @@
 - 서버: 애플리케이션 하나(무상태). 늘릴 때는 같은 애플리케이션을 여러 대 띄운다.
 - 네트워크: 클라이언트와 서버 사이는 HTTPS만 허용한다. TLS 종료 위치(로드밸런서/리버스 프록시)는 배포 환경을 정할 때 결정한다.
 - DB 접근: 애플리케이션과 운영자만 접근한다. 운영자 접근 경로와 권한은 배포 환경에서 정한다(7.7, D-TODO-ARCH-002).
-- 배포 환경: 미정 (D-TODO-ARCH-002)
+- 배포: CI 서버가 테스트를 통과한 커밋의 컨테이너 이미지를 레지스트리에 올리고, 서버 1대에 접속해 그 이미지로 앱을 교체한 뒤 기동을 확인한다. DB도 같은 서버의 컨테이너로 둔다. 상세는 10.8
+- 남은 결정: TLS 종료 위치, DB 백업, 운영자 DB 접근 경로 (D-TODO-ARCH-002)
 
 ### 2.5 데이터 흐름
 ```
@@ -451,7 +457,7 @@ cloud.jjoon.workout
 - 기본은 API 수준 통합 테스트(10.1). 요청부터 DB까지 실제로 거친다.
 - 모든 테스트 이름에 검증하는 요구사항 ID를 넣는다(추적성).
 - DB 자동 동작(트리거)과 DB 제약은 테스트에서 SQL로 직접 데이터를 바꿔 검증한다(운영자 경로).
-- 테스트 DB 이미지는 운영 버전과 같게 고정한다(현재 `postgres:latest`, D-TODO-ARCH-001).
+- 테스트 DB 이미지는 운영 버전과 같게 고정한다(`postgres:18`).
 
 ### 10.6 공통 기반 구현 순서
 1. 의존성 추가: Spring Security, Bean Validation, jOOQ 코드 생성 플러그인 (정확한 artifact 이름은 Spring Boot 4.1 기준으로 확인)
@@ -480,6 +486,26 @@ UPDATE users SET failed_pin_count = 0, locked_until = NULL, updated_at = now()
 DELETE FROM users WHERE login_id = 'joonhee.song';
 ```
 
+
+### 10.8 CI/CD
+| 파일 | 역할 |
+|-----|-----|
+| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → master만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/lets-workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
+| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반 `eclipse-temurin:21-jre`, 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
+| `deploy/docker-compose.yml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`, 8080) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
+| `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호). 실제 파일은 저장소에 넣지 않는다 |
+
+Jenkins 준비:
+- 전역 도구 JDK 이름 `jdk21`. 에이전트는 Docker를 실행할 수 있어야 한다(Testcontainers). 이미지 빌드에는 Docker가 필요 없다(Jib).
+- 자격 증명: `ghcr-credentials`(GitHub 사용자 + `write:packages` PAT), `deploy-ssh-key`(SSH 개인 키), `deploy-host`(Secret text, `user@host`). 선택 환경 변수 `GHCR_OWNER`(이미지 소유 계정·조직, 없으면 GHCR 사용자 이름).
+
+서버 준비(한 번):
+- Docker와 Compose 플러그인, `curl` 설치. 배포 사용자가 `docker`를 실행할 수 있어야 한다.
+- `/opt/lets-workout/.env`를 `.env.example`로 만들고 실제 값을 넣는다.
+- `docker login ghcr.io`를 **`read:packages`만 있는 토큰**으로 한 번 해 둔다. Jenkins의 쓰기 토큰은 서버로 보내지 않는다.
+
+롤백: 서버의 `release.env`에서 `IMAGE_TAG`를 이전 태그로 바꾸고 `docker compose --env-file .env --env-file release.env up -d`.
+
 ---
 
 ## 부록 A. 설계 결정 기록
@@ -500,8 +526,8 @@ DELETE FROM users WHERE login_id = 'joonhee.song';
 | DEC-ARCH-013 | 운영자 SQL로 바뀌는 데이터에 따른 규칙(PIN 변경 시 로그인 종료)은 DB 자동 동작(트리거)으로 보장한다. 그 밖의 규칙은 애플리케이션에 둔다 | 운영자가 SQL 한 줄을 빠뜨려도 규칙이 지켜진다(auth BR-011). 애플리케이션을 거치지 않는 변경은 애플리케이션이 알 수 없다 | 운영 절차에 로그인 종료 SQL을 함께 적기: 운영자가 빠뜨리면 규칙이 깨짐 / 요청마다 PIN 비교: 로그인 행에 PIN 정보를 따로 보관해야 함 |
 
 ## 부록 B. 설계 미결정 사항
-- **D-TODO-ARCH-001** 운영 PostgreSQL 버전 결정. 테스트 이미지(`postgres:latest`)를 같은 버전으로 고정한다. (`users.id`는 버전과 무관한 `uuid_v7()` 함수를 쓰므로 버전에 묶이지 않는다) (영향: 1.4, 10.5)
-- **D-TODO-ARCH-002** 배포 환경(서버, TLS 종료 위치, DB 백업과 암호화, 운영자 DB 접근 경로와 권한) 결정. (영향: 2.4, 7.7, 9장)
+- **D-TODO-ARCH-001** ~~운영 PostgreSQL 버전 결정~~ **결정됨 (v0.6): PostgreSQL 18.** 배포 compose와 테스트(Testcontainers)를 모두 `postgres:18`로 고정했다.
+- **D-TODO-ARCH-002** 배포 환경 중 남은 것: TLS 종료 위치(현재 앱이 8080 평문으로 열려 있어 HTTPS 요구사항을 위해 리버스 프록시 등이 필요), DB 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker compose exec db psql` 등). 서버 1대 compose 배포는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
 - **D-TODO-ARCH-003** ~~Access/Refresh Token 만료 시간~~ **결정됨 (v0.4):** 로그인 토큰 하나, 마지막 사용 후 30일 (auth BR-006, DEC-ARCH-011)
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
 - **D-TODO-ARCH-005** DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문(부분 인덱스, 트리거, PL/pgSQL 함수)을 읽지 못하면, 해당 구문을 코드 생성에서 무시하도록 설정하거나 컨테이너 기반 생성으로 바꾼다. 첫 구현 때 확인한다. (영향: DEC-ARCH-002)
