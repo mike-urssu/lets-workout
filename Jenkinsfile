@@ -7,6 +7,7 @@
 //       deploy-ssh-key   : SSH private key for the deploy server
 //       deploy-host      : Secret text = user@host of the deploy server
 //   - Optional environment GHCR_OWNER: GitHub user/org that owns the image (defaults to the GHCR username).
+//   - Optional environment DEPLOY_PORT: SSH port of the deploy server (defaults to 22).
 pipeline {
     agent any
 
@@ -66,11 +67,12 @@ pipeline {
                         // The server pulls with its own read-only GHCR login (see deploy setup), so the
                         // write token never leaves Jenkins.
                         sh '''
-                            SSH="ssh -o StrictHostKeyChecking=accept-new $DEPLOY_HOST"
+                            PORT="${DEPLOY_PORT:-22}"
+                            SSH="ssh -p $PORT -o StrictHostKeyChecking=accept-new $DEPLOY_HOST"
                             COMPOSE="docker compose --env-file .env --env-file release.env"
 
                             $SSH "mkdir -p $DEPLOY_DIR"
-                            scp -o StrictHostKeyChecking=accept-new deploy/docker-compose.yml "$DEPLOY_HOST:$DEPLOY_DIR/docker-compose.yml"
+                            scp -P "$PORT" -o StrictHostKeyChecking=accept-new deploy/docker-compose.yml "$DEPLOY_HOST:$DEPLOY_DIR/docker-compose.yml"
                             printf 'IMAGE=%s\\nIMAGE_TAG=%s\\n' "$IMAGE" "$IMAGE_TAG" | $SSH "cat > $DEPLOY_DIR/release.env"
                             $SSH "cd $DEPLOY_DIR && $COMPOSE pull app && $COMPOSE up -d"
                         '''
@@ -86,7 +88,7 @@ pipeline {
                     sshagent(credentials: ['deploy-ssh-key']) {
                         // An unauthenticated call answering 401 means the app started and reached its DB.
                         sh '''
-                            ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_HOST" '
+                            ssh -p "${DEPLOY_PORT:-22}" -o StrictHostKeyChecking=accept-new "$DEPLOY_HOST" '
                                 for i in $(seq 1 30); do
                                     code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/auth/session)
                                     [ "$code" = "401" ] && exit 0

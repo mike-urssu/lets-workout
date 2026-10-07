@@ -497,7 +497,7 @@ DELETE FROM users WHERE login_id = 'joonhee.song';
 
 Jenkins 준비:
 - 전역 도구 JDK 이름 `jdk21`. 에이전트는 Docker를 실행할 수 있어야 한다(Testcontainers). 이미지 빌드에는 Docker가 필요 없다(Jib).
-- 자격 증명: `ghcr-credentials`(GitHub 사용자 + `write:packages` PAT), `deploy-ssh-key`(SSH 개인 키), `deploy-host`(Secret text, `user@host`). 선택 환경 변수 `GHCR_OWNER`(이미지 소유 계정·조직, 없으면 GHCR 사용자 이름).
+- 자격 증명: `ghcr-credentials`(GitHub 사용자 + `write:packages` PAT), `deploy-ssh-key`(SSH 개인 키), `deploy-host`(Secret text, `user@host`). 선택 환경 변수 `GHCR_OWNER`(이미지 소유 계정·조직, 없으면 GHCR 사용자 이름), `DEPLOY_PORT`(배포 서버 SSH 포트, 없으면 22).
 
 서버 준비(한 번):
 - Docker와 Compose 플러그인, `curl` 설치. 배포 사용자가 `docker`를 실행할 수 있어야 한다.
