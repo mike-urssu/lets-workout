@@ -47,7 +47,7 @@
 | Bean Validation | Boot 관리, **추가** | 요청 검증을 선언적으로 처리 | 서비스에서 직접 검증: 검증 코드가 흩어짐 |
 | 컨테이너 이미지 (Jib Gradle 플러그인, eclipse-temurin 21 JRE 기반) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
 | GitHub Container Registry (GHCR) | — | 사용자 결정. 이미지 저장소 | — |
-| Jenkins (Multibranch Pipeline) | — | 사용자 결정. 모든 브랜치 테스트, master만 이미지 배포 (10.8) | — |
+| Jenkins (Multibranch Pipeline) | — | 사용자 결정. 모든 브랜치 테스트, main만 이미지 배포 (10.8) | — |
 | Docker Compose | — | 서버 1대에 앱과 DB를 함께 띄운다. 배포 = 이미지 태그 교체 후 재기동 (10.8) | Kubernetes: 지금 규모에 운영 부담이 큼 |
 | Testcontainers (PostgreSQL) | 저장소 설정 | 테스트가 운영과 같은 DB 엔진에서 돈다. DB 제약과 트리거까지 검증 | 내장 DB(H2): 운영 DB 전용 기능을 검증할 수 없음 |
 
@@ -490,7 +490,7 @@ DELETE FROM users WHERE login_id = 'joonhee.song';
 ### 10.8 CI/CD
 | 파일 | 역할 |
 |-----|-----|
-| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → master만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/lets-workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
+| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/lets-workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
 | `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반 `eclipse-temurin:21-jre`, 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
 | `deploy/docker-compose.yml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`, 8080) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
 | `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호). 실제 파일은 저장소에 넣지 않는다 |

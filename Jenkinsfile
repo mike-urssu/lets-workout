@@ -1,4 +1,4 @@
-// Multibranch Pipeline. Every branch is tested; only master is pushed to GHCR and deployed.
+// Multibranch Pipeline. Every branch is tested; only main is pushed to GHCR and deployed.
 //
 // Jenkins setup:
 //   - Global tool (JDK) named 'jdk21'; the agent must run Docker (Testcontainers). Jib builds the image without Docker.
@@ -38,7 +38,7 @@ pipeline {
         }
 
         stage('Publish image') {
-            when { branch 'master' }
+            when { branch 'main' }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'ghcr-credentials',
                         usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
@@ -59,7 +59,7 @@ pipeline {
         }
 
         stage('Deploy') {
-            when { branch 'master' }
+            when { branch 'main' }
             steps {
                 withCredentials([string(credentialsId: 'deploy-host', variable: 'DEPLOY_HOST')]) {
                     sshagent(credentials: ['deploy-ssh-key']) {
@@ -80,7 +80,7 @@ pipeline {
         }
 
         stage('Verify') {
-            when { branch 'master' }
+            when { branch 'main' }
             steps {
                 withCredentials([string(credentialsId: 'deploy-host', variable: 'DEPLOY_HOST')]) {
                     sshagent(credentials: ['deploy-ssh-key']) {
