@@ -72,7 +72,7 @@ pipeline {
                             COMPOSE="docker compose --env-file .env --env-file release.env"
 
                             $SSH "mkdir -p $DEPLOY_DIR"
-                            scp -P "$PORT" -o StrictHostKeyChecking=accept-new deploy/docker-compose.yml "$DEPLOY_HOST:$DEPLOY_DIR/docker-compose.yml"
+                            scp -P "$PORT" -o StrictHostKeyChecking=accept-new deploy/compose.yaml "$DEPLOY_HOST:$DEPLOY_DIR/compose.yaml"
                             printf 'IMAGE=%s\\nIMAGE_TAG=%s\\n' "$IMAGE" "$IMAGE_TAG" | $SSH "cat > $DEPLOY_DIR/release.env"
                             $SSH "cd $DEPLOY_DIR && $COMPOSE pull app && $COMPOSE up -d"
                         '''

@@ -4,8 +4,19 @@ services:
   app:
     image: ${IMAGE}:${IMAGE_TAG}
     restart: unless-stopped
+    # Public traffic comes through Traefik (HTTPS). 8080 is open on localhost only, for Jenkins' Verify stage.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    networks:
+      - default
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik
+      traefik.http.routers.workout-api.rule: Host(`workout-api.jjoon.cloud`)
+      traefik.http.routers.workout-api.entrypoints: websecure
+      traefik.http.routers.workout-api.tls.certresolver: letsencrypt
+      traefik.http.services.workout-api.loadbalancer.server.port: "8080"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
@@ -32,3 +43,8 @@ services:
 
 volumes:
   db-data:
+
+networks:
+  # Shared with the Traefik container already running on the server.
+  traefik:
+    external: true

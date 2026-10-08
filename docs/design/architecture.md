@@ -127,10 +127,10 @@
 
 ### 2.4 서버 / 네트워크 / 배포
 - 서버: 애플리케이션 하나(무상태). 늘릴 때는 같은 애플리케이션을 여러 대 띄운다.
-- 네트워크: 클라이언트와 서버 사이는 HTTPS만 허용한다. TLS 종료 위치(로드밸런서/리버스 프록시)는 배포 환경을 정할 때 결정한다.
+- 네트워크: 클라이언트와 서버 사이는 HTTPS만 허용한다. TLS는 서버의 Traefik이 종료하고 `https://workout-api.jjoon.cloud`를 앱으로 전달한다(10.8).
 - DB 접근: 애플리케이션과 운영자만 접근한다. 운영자 접근 경로와 권한은 배포 환경에서 정한다(7.7, D-TODO-ARCH-002).
 - 배포: CI 서버가 테스트를 통과한 커밋의 컨테이너 이미지를 레지스트리에 올리고, 서버 1대에 접속해 그 이미지로 앱을 교체한 뒤 기동을 확인한다. DB도 같은 서버의 컨테이너로 둔다. 상세는 10.8
-- 남은 결정: TLS 종료 위치, DB 백업, 운영자 DB 접근 경로 (D-TODO-ARCH-002)
+- 남은 결정: DB 백업, 운영자 DB 접근 경로 (D-TODO-ARCH-002)
 
 ### 2.5 데이터 흐름
 ```
@@ -492,7 +492,7 @@ DELETE FROM users WHERE login_id = 'joonhee.song';
 |-----|-----|
 | `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/lets-workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
 | `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반 `eclipse-temurin:21-jre`, `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
-| `deploy/docker-compose.yml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`, 8080) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
+| `deploy/compose.yaml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`. 외부 요청은 Traefik이 `workout-api.jjoon.cloud`로 받아 전달(외부 네트워크 `traefik`, 진입점 `websecure`, 인증서 `letsencrypt`). 8080은 서버 localhost에만 열어 Verify에 쓴다) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
 | `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호). 실제 파일은 저장소에 넣지 않는다 |
 
 Jenkins 준비:
@@ -527,7 +527,7 @@ Jenkins 준비:
 
 ## 부록 B. 설계 미결정 사항
 - **D-TODO-ARCH-001** ~~운영 PostgreSQL 버전 결정~~ **결정됨 (v0.6): PostgreSQL 18.** 배포 compose와 테스트(Testcontainers)를 모두 `postgres:18`로 고정했다.
-- **D-TODO-ARCH-002** 배포 환경 중 남은 것: TLS 종료 위치(현재 앱이 8080 평문으로 열려 있어 HTTPS 요구사항을 위해 리버스 프록시 등이 필요), DB 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker compose exec db psql` 등). 서버 1대 compose 배포는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
+- **D-TODO-ARCH-002** 배포 환경 중 남은 것: DB 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker compose exec db psql` 등). 서버 1대 compose 배포와 Traefik TLS 종료는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
 - **D-TODO-ARCH-003** ~~Access/Refresh Token 만료 시간~~ **결정됨 (v0.4):** 로그인 토큰 하나, 마지막 사용 후 30일 (auth BR-006, DEC-ARCH-011)
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
 - **D-TODO-ARCH-005** DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문(부분 인덱스, 트리거, PL/pgSQL 함수)을 읽지 못하면, 해당 구문을 코드 생성에서 무시하도록 설정하거나 컨테이너 기반 생성으로 바꾼다. 첫 구현 때 확인한다. (영향: DEC-ARCH-002)
