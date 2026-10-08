@@ -490,7 +490,7 @@ DELETE FROM users WHERE login_id = 'joonhee.song';
 ### 10.8 CI/CD
 | 파일 | 역할 |
 |-----|-----|
-| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/lets-workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
+| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
 | `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반 `eclipse-temurin:21-jre`, `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
 | `deploy/compose.yaml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`. 외부 요청은 Traefik이 `workout-api.jjoon.cloud`로 받아 전달(외부 네트워크 `traefik`, 진입점 `websecure`, 인증서 `letsencrypt`). 8080은 서버 localhost에만 열어 Verify에 쓴다) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
 | `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호). 실제 파일은 저장소에 넣지 않는다 |
