@@ -9,7 +9,7 @@ enum class ErrorCode(val status: HttpStatus, val message: String) {
     NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 경로를 찾을 수 없습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."),
 
-    AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "아이디 또는 PIN이 올바르지 않습니다."),
+    AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "PIN이 올바르지 않습니다. 다시 입력해 주세요."),
     AUTH_ACCOUNT_LOCKED(HttpStatus.UNAUTHORIZED, "PIN을 5회 잘못 입력해 로그인이 잠겼습니다."),
     AUTH_SESSION_REPLACED(HttpStatus.UNAUTHORIZED, "다른 기기에서 로그인되어 로그아웃되었습니다."),
     AUTH_SESSION_REVOKED(HttpStatus.UNAUTHORIZED, "다시 로그인해 주세요."),

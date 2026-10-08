@@ -61,7 +61,7 @@ class AuthApiTest {
         login("joonhee.song", "000000").andExpect {
             status { isUnauthorized() }
             jsonPath("$.code") { value("AUTH_INVALID_CREDENTIALS") }
-            jsonPath("$.message") { value("아이디 또는 PIN이 올바르지 않습니다.") }
+            jsonPath("$.message") { value("PIN이 올바르지 않습니다. 다시 입력해 주세요.") }
         }
     }
 
@@ -70,7 +70,7 @@ class AuthApiTest {
         login("nobody.here", "123456").andExpect {
             status { isUnauthorized() }
             jsonPath("$.code") { value("AUTH_INVALID_CREDENTIALS") }
-            jsonPath("$.message") { value("아이디 또는 PIN이 올바르지 않습니다.") }
+            jsonPath("$.message") { value("PIN이 올바르지 않습니다. 다시 입력해 주세요.") }
         }
     }
 
