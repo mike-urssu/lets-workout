@@ -52,8 +52,11 @@ pipeline {
                     sh '''
                         OWNER=$(echo "${GHCR_OWNER:-$GHCR_USER}" | tr '[:upper:]' '[:lower:]')
                         BASE="ghcr.io/$OWNER/$BASE_IMAGE"
-                        # The agent runs as a system daemon without the user's keychain, so Docker's "desktop" credential
-                        # store fails. Log in with a throwaway config instead; it is removed when the step ends.
+                        # The agent runs as a system daemon without the user's keychain, so Docker's keychain credential
+                        # helpers fail (Keychain Error -61). The macOS CLI picks such a helper whenever one is on the PATH,
+                        # so run docker with the helpers hidden and a throwaway config; it is removed when the step ends.
+                        DOCKER_BIN="$(command -v docker)"
+                        docker() { PATH=/usr/bin:/bin:/usr/sbin:/sbin "$DOCKER_BIN" "$@"; }
                         export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
                         export DOCKER_CONFIG="$(mktemp -d)"
                         trap 'rm -rf "$DOCKER_CONFIG"' EXIT
