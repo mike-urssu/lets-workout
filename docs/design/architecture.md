@@ -491,7 +491,7 @@ DELETE FROM users WHERE login_id = 'joonhee.song';
 | 파일 | 역할 |
 |-----|-----|
 | `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/lets-workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
-| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반 `eclipse-temurin:21-jre`, 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
+| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반 `eclipse-temurin:21-jre`, `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
 | `deploy/docker-compose.yml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`, 8080) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
 | `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호). 실제 파일은 저장소에 넣지 않는다 |
 
@@ -501,7 +501,7 @@ Jenkins 준비:
 
 서버 준비(한 번):
 - Docker와 Compose 플러그인, `curl` 설치. 배포 사용자가 `docker`를 실행할 수 있어야 한다.
-- `/opt/lets-workout/.env`를 `.env.example`로 만들고 실제 값을 넣는다.
+- `/opt/projects/workout/.env`를 `.env.example`로 만들고 실제 값을 넣는다.
 - `docker login ghcr.io`를 **`read:packages`만 있는 토큰**으로 한 번 해 둔다. Jenkins의 쓰기 토큰은 서버로 보내지 않는다.
 
 롤백: 서버의 `release.env`에서 `IMAGE_TAG`를 이전 태그로 바꾸고 `docker compose --env-file .env --env-file release.env up -d`.

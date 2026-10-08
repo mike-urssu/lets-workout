@@ -63,6 +63,12 @@ tasks.withType<Test> {
 jib {
     from {
         image = "eclipse-temurin:21-jre"
+        platforms {
+            platform {
+                architecture = "arm64" // deploy server runs Colima on Apple Silicon
+                os = "linux"
+            }
+        }
     }
     to {
         auth {

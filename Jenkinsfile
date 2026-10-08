@@ -23,7 +23,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = 'lets-workout-backend'
-        DEPLOY_DIR = '/opt/lets-workout'
+        DEPLOY_DIR = '/opt/projects/workout'
     }
 
     stages {
