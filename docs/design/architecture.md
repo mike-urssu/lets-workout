@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.7
+- 문서 버전: v0.8
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -11,6 +11,7 @@
   - v0.5 — 인증 구현 반영: 한 테이블의 단순 조건부 갱신은 JPA(10.3), UUIDv7 생성 수단 확정(D-TODO-ARCH-006), `users.id`는 버전 무관 `uuid_v7()` 함수, 현재 시각은 주입한 시계(10.1)
   - v0.6 — CI/CD 추가: 컨테이너 이미지 + 레지스트리 + CI 서버 + 서버 1대 compose 배포(2.4, 10.8), PostgreSQL 18 확정(D-TODO-ARCH-001)
   - v0.7 — `users.id` 기본값을 직접 정의한 `uuid_v7()` 대신 PostgreSQL 18 내장 `uuidv7()`로 교체 (스키마 변경 V3)
+  - v0.8 — 운영 사용 전이라 인증 스키마 변경 V1~V3을 V1 하나로 합침. D-TODO-ARCH-005 결정(PL/pgSQL은 `[jooq ignore]` 주석으로 코드 생성에서 제외). CI 에이전트 label·`DEPLOY_HOST` 전역 속성(10.8)
 
 ---
 
@@ -417,7 +418,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 로그인 토큰 생성 | `java.security.SecureRandom`으로 32바이트 → Base64URL(패딩 없음, 43자) |
 | 로그인 토큰 해시 | SHA-256 → 소문자 16진수 64자 (`java.security.MessageDigest`) |
 | 시간이 일정한 비교 (PIN) | `java.security.MessageDigest.isEqual` (바이트 배열 비교) |
-| 스키마 변경 스크립트 | Flyway, `src/main/resources/db/migration/V<번호>__<설명>.sql`. 애플리케이션 시작 시 적용, JPA `ddl-auto: validate` (DEC-ARCH-003) |
+| 스키마 변경 스크립트 | Flyway, `src/main/resources/db/migration/V<번호>__<설명>.sql`. 애플리케이션 시작 시 적용, JPA `ddl-auto: validate` (DEC-ARCH-003). jOOQ 오픈소스 DDL 파서가 읽지 못하는 구문(PL/pgSQL 함수·트리거)은 `-- [jooq ignore start]` / `-- [jooq ignore stop]` 주석으로 감싼다 (D-TODO-ARCH-005) |
 | 공개 정적 파일 | `src/main/resources/static/` 아래 파일을 URL 루트 기준으로 제공. 보안 설정에서 해당 경로를 인증 없이 허용 |
 | API 수준 통합 테스트 | MockMvc + Testcontainers PostgreSQL(`TestcontainersConfiguration`) |
 | 테스트 인증 | 테스트 픽스처가 `users`·`login_session` 행을 직접 넣고 그 토큰을 `Authorization` 헤더로 보낸다 |
@@ -532,7 +533,7 @@ Jenkins 준비:
 - **D-TODO-ARCH-002** 배포 환경 중 남은 것: DB 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker compose exec db psql` 등). 서버 1대 compose 배포와 Traefik TLS 종료는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
 - **D-TODO-ARCH-003** ~~Access/Refresh Token 만료 시간~~ **결정됨 (v0.4):** 로그인 토큰 하나, 마지막 사용 후 30일 (auth BR-006, DEC-ARCH-011)
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
-- **D-TODO-ARCH-005** DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문(부분 인덱스, 트리거, PL/pgSQL 함수)을 읽지 못하면, 해당 구문을 코드 생성에서 무시하도록 설정하거나 컨테이너 기반 생성으로 바꾼다. 첫 구현 때 확인한다. (영향: DEC-ARCH-002)
+- **D-TODO-ARCH-005** ~~DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문을 읽지 못하면~~ **결정됨 (v0.8, 운동 기록 구현 시 확인):** 부분 인덱스·`uuidv7()` 기본값은 읽는다. `CREATE FUNCTION`(PL/pgSQL)은 Pro 전용이라 `[jooq ignore]` 주석으로 제외하고 `parseIgnoreComments`를 켠다. `timestamptz`는 forcedType으로 `Instant`. 설정은 `build.gradle.kts`의 `jooq` 블록 (영향: DEC-ARCH-002)
 - **D-TODO-ARCH-006** ~~UUIDv7 생성 수단 확정~~ **결정됨 (인증 구현 시 확인):** Spring Boot 4.1.1에 포함된 Hibernate 7.4.5의 `UuidGenerator.Style.VERSION_7`을 쓴다. 라이브러리 추가 없음 (10.1)
 
 ## 부록 C. 요구사항 피드백

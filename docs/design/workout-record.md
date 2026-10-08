@@ -1,6 +1,6 @@
 # 운동 기록 기능 설계 문서
 
-- 문서 버전: v0.4
+- 문서 버전: v0.5
 - 작성일: 2026-10-05
 - 상태: 초안
 - 요구사항: `docs/requirements/workout-record.md` (v0.1)
@@ -9,6 +9,7 @@
 - 변경 이력:
   - v0.2 — 기술 중립 용어로 다시 씀. 기술 대응은 공통 설계 10.1을 따른다
   - v0.3 — 모든 PK를 UUIDv7로 변경(공통 DEC-ARCH-010). 세트·운동 순서와 목록 정렬을 ID 대신 시각 컬럼 기준으로 변경
+  - v0.5 — 구현 반영: 방치 세션 정리의 기준 시각을 DB 시각 대신 주입한 시계로(공통 10.1, 테스트에서 시간 이동), 스키마 변경 번호를 인증 V1 통합에 맞춰 2·3으로
   - v0.4 — 인증 설계 반영: `workout_session.user_id`를 참조(함께 삭제)로 변경(auth BR-012, DEC-WORKOUT-014), 스키마 변경 순서를 인증 스키마 뒤로, 사용자 ID 출처를 인증 필터로
 
 ---
@@ -198,7 +199,7 @@
 4. 커밋, 로그 `workout_session.deleted`, 204.
 
 #### REQ-WORKOUT-006 방치된 세션 자동 완료 (ExpiredSessionCleaner.cleanUp)
-독립 트랜잭션에서 조회 저장소의 **조건부 일괄 갱신** 두 번으로 처리한다. 기준 시각은 DB의 현재 시각이다.
+독립 트랜잭션에서 조회 저장소의 **조건부 일괄 갱신** 두 번으로 처리한다. 기준 시각은 애플리케이션의 현재 시각(공통 10.1)이다.
 1. 완료 처리 — 대상: `user_id = userId`, `status = IN_PROGRESS`, `started_at < 현재 시각 - 6시간`, 세트가 1개 이상인 세션. 변경: `status = COMPLETED`, `ended_at` = 그 세션의 세트 중 가장 늦은 `created_at`, `updated_at` = 현재 시각 (BR-013). 처리한 세션 ID를 돌려받는다.
 2. 삭제 처리 — 대상: 같은 조건이면서 세트가 하나도 없는 세션. 삭제한다 (BR-013, BR-012). 하위 운동은 참조(함께 삭제)로 삭제된다. 처리한 세션 ID를 돌려받는다.
 3. 처리한 세션마다 로그 `workout_session.auto_completed` / `workout_session.auto_deleted` (NFR-LOG-001).
@@ -850,13 +851,13 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 - `exercise`는 삭제하지 않는다(사용 중이면 참조(삭제 금지)가 막는다).
 
 ### 6.5 스키마 변경 목록
-인증 설계의 스키마 변경 1~3(users, login_session, users.id 기본값) 다음 순서로 적용한다. 스크립트 파일 규칙은 공통 설계 10.1을 따른다.
+인증 설계의 스키마 변경 1(users, login_session) 다음 순서로 적용한다. 스크립트 파일 규칙은 공통 설계 10.1을 따른다.
 
 | 순서 | 변경 | 내용 |
 |-----|-----|-----|
-| 4 | exercise 생성 | `exercise` 테이블, `ux_exercise_name` |
-| 5 | 운동 세션 생성 | `workout_session`, `workout_session_exercise`, `workout_set`과 6.2의 제약, 6.3의 인덱스 |
-| 6 (보류) | 초기 운동 목록 투입 | TODO-014 결정 후 (D-TODO-WORKOUT-001) |
+| 2 | exercise 생성 | `exercise` 테이블, `ux_exercise_name` |
+| 3 | 운동 세션 생성 | `workout_session`, `workout_session_exercise`, `workout_set`과 6.2의 제약, 6.3의 인덱스 |
+| 4 (보류) | 초기 운동 목록 투입 | TODO-014 결정 후 (D-TODO-WORKOUT-001) |
 
 ---
 
@@ -948,7 +949,7 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 | 순서 | 작업 | 관련 요구사항 | 완료 기준 |
 |-----|-----|-------------|----------|
 | 0 | 공통 기반 (공통 설계 10.6) | NFR-SEC-001, NFR-AVAIL-001 | 공통 설계 10.6 완료 기준 |
-| 1 | 스키마 변경 3·4 적용 (6.5, 인증 스키마 1·2 이후) | DATA-001~004 | 스키마 적용 성공, 조회 저장소에서 테이블 사용 가능 |
+| 1 | 스키마 변경 2·3 적용 (6.5, 인증 스키마 1 이후) | DATA-001~004 | 스키마 적용 성공, 조회 저장소에서 테이블 사용 가능 |
 | 2 | 운동 목록 API | REQ-EXERCISE-001, BR-014 | API-EXERCISE-001 테스트(검색, 최근 수행일 null) |
 | 3 | 세션 시작·진행 중 조회 + ExpiredSessionCleaner | REQ-WORKOUT-001, REQ-WORKOUT-006, BR-004, BR-011, BR-013 | 201, 중복 409, 동시 시작 시 1건, 6시간 경과 세션 정리 테스트 |
 | 4 | 상세 조회 | REQ-WORKOUT-004, BR-007, BR-010 | 세트 번호·요약 계산 테스트 |
@@ -991,7 +992,7 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 | DEC-WORKOUT-014 | `workout_session.user_id`를 참조(함께 삭제)로 둔다 (v0.4: 삭제 금지에서 변경) | 계정을 삭제하면 그 사용자의 운동 기록도 모두 삭제해야 한다(auth BR-012). 운영자의 계정 삭제 SQL 한 문장으로 끝난다 | 삭제 금지 유지 + 운영자가 운동 기록부터 삭제: 절차가 길고 빠뜨리면 계정 삭제가 실패 |
 
 ## 부록 B. 설계 미결정 사항
-- **D-TODO-WORKOUT-001** 초기 운동 목록 투입(스키마 변경 5)과 이미지 파일. 요구사항 TODO-014 결정을 기다린다. (영향: 6.5, DEC-WORKOUT-008, EX-001)
+- **D-TODO-WORKOUT-001** 초기 운동 목록 투입(스키마 변경 4)과 이미지 파일. 요구사항 TODO-014 결정을 기다린다. (영향: 6.5, DEC-WORKOUT-008, EX-001)
 - **D-TODO-WORKOUT-002** 운동 목록 페이지 나누기 필요 여부. TODO-014에서 정한 운동 개수를 보고 정한다. (영향: API-EXERCISE-001, DEC-WORKOUT-011)
 - **D-TODO-WORKOUT-003** Figma 화면과 4장 대조. Figma 링크를 받으면 화면 데이터·흐름이 요구사항 3장과 같은지 확인한다. (영향: 4장)
 

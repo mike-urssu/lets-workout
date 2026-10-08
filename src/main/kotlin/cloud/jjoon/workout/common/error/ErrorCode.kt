@@ -14,4 +14,13 @@ enum class ErrorCode(val status: HttpStatus, val message: String) {
     AUTH_SESSION_REPLACED(HttpStatus.UNAUTHORIZED, "다른 기기에서 로그인되어 로그아웃되었습니다."),
     AUTH_SESSION_REVOKED(HttpStatus.UNAUTHORIZED, "다시 로그인해 주세요."),
     AUTH_SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "오랫동안 사용하지 않아 로그아웃되었습니다. 다시 로그인해 주세요."),
+
+    WORKOUT_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "운동 기록을 찾을 수 없습니다."),
+    WORKOUT_SESSION_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "이미 진행 중인 운동이 있습니다."),
+    WORKOUT_SESSION_NOT_EDITABLE(HttpStatus.CONFLICT, "완료된 운동 기록은 수정할 수 없습니다."),
+    WORKOUT_SESSION_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 완료된 운동입니다."),
+    WORKOUT_SESSION_HAS_NO_SETS(HttpStatus.CONFLICT, "세트를 하나 이상 기록해야 운동을 완료할 수 있습니다."),
+    EXERCISE_NOT_FOUND(HttpStatus.NOT_FOUND, "운동을 찾을 수 없습니다."),
+    SESSION_EXERCISE_NOT_FOUND(HttpStatus.NOT_FOUND, "운동 기록에서 해당 운동을 찾을 수 없습니다."),
+    WORKOUT_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "세트를 찾을 수 없습니다."),
 }

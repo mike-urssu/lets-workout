@@ -6,6 +6,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 import java.time.Clock
 
@@ -26,6 +27,11 @@ class GlobalExceptionHandler(private val clock: Clock) {
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleUnreadable(e: HttpMessageNotReadableException): ResponseEntity<ErrorResponse> =
+        respond(ErrorCode.VALIDATION_FAILED)
+
+    /** Path variables that do not convert, such as a malformed UUID. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    fun handleTypeMismatch(e: MethodArgumentTypeMismatchException): ResponseEntity<ErrorResponse> =
         respond(ErrorCode.VALIDATION_FAILED)
 
     @ExceptionHandler(NoResourceFoundException::class)

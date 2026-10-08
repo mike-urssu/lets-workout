@@ -5,3 +5,7 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  jackson:
+    deserialization:
+      # Integer fields reject decimals such as 8.5 instead of truncating them (architecture 5).
+      accept-float-as-int: false

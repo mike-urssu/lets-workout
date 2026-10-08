@@ -1,11 +1,11 @@
 # 인증 기능 설계 문서
 
-- 문서 버전: v0.2
+- 문서 버전: v0.3
 - 작성일: 2026-10-05
 - 상태: 초안
 - 요구사항: `docs/requirements/auth.md` (v0.2)
 - 공통 설계: `docs/design/architecture.md` (v0.5)
-- 변경 이력: v0.2 — 구현 반영: 조건 검사 `ck_users_failed_pin_count` 제거(애플리케이션이 5 이상을 저장하지 않음), 로그인 행 조건부 갱신·삭제를 저장소(LoginSessionRepository)로 통합
+- 변경 이력: v0.3 — 운영 사용 전이라 스키마 변경 1~3을 1 하나로 합침 / v0.2 — 구현 반영: 조건 검사 `ck_users_failed_pin_count` 제거(애플리케이션이 5 이상을 저장하지 않음), 로그인 행 조건부 갱신·삭제를 저장소(LoginSessionRepository)로 통합
 
 ---
 
@@ -393,9 +393,7 @@ users 1 ──── N login_session          (참조: 함께 삭제)
 
 | 순서 | 변경 | 내용 |
 |-----|-----|-----|
-| 1 | users 생성 | `users` 테이블과 6.2의 제약 |
-| 2 | login_session 생성 | `login_session` 테이블, 6.2의 제약, 6.3의 인덱스, DB 자동 동작 `trg_users_pin_revoke_login` |
-| 3 | users.id 기본값 교체 | 기본값을 PostgreSQL 18 내장 `uuidv7()`로 바꾸고, 1에서 직접 정의한 `uuid_v7()` 함수 삭제 (공통 10.1) |
+| 1 | users·login_session 생성 | `users`(`id` 기본값 PostgreSQL 18 내장 `uuidv7()`)와 `login_session` 테이블, 6.2의 제약, 6.3의 인덱스, DB 자동 동작 `trg_users_pin_revoke_login` (v0.3: 운영 사용 전이라 기존 1~3을 합침) |
 
 ---
 
@@ -477,7 +475,7 @@ users 1 ──── N login_session          (참조: 함께 삭제)
 | 순서 | 작업 | 관련 요구사항 | 완료 기준 |
 |-----|-----|-------------|----------|
 | 0 | 공통 기반 (공통 설계 10.6) | NFR-AVAIL-001 | 공통 설계 10.6 완료 기준 |
-| 1 | 스키마 변경 1·2 (6.5) | DATA-001, DATA-002, BR-002, BR-003, BR-011 | 운영자 SQL로 잘못된 아이디·PIN 거절, PIN 변경 시 활성 로그인 REVOKED 테스트 |
+| 1 | 스키마 변경 1 (6.5) | DATA-001, DATA-002, BR-002, BR-003, BR-011 | 운영자 SQL로 잘못된 아이디·PIN 거절, PIN 변경 시 활성 로그인 REVOKED 테스트 |
 | 2 | 인증 필터 + 로그인 유지 확인 API | REQ-AUTH-003, BR-006, NFR-SEC-001 | 픽스처 토큰으로 204, 만료·REPLACED·REVOKED·모르는 토큰 401 코드별 테스트 |
 | 3 | 로그인 API | REQ-AUTH-001, BR-005, BR-007 ~ BR-010 | 성공, 실패, 5회째 잠금, 잠금 중 거절, 5분 후 0부터, 두 기기 로그인 테스트 |
 | 4 | 로그아웃 API | REQ-AUTH-002 | 로그아웃 후 401, 끝난 토큰·토큰 없음도 204 테스트 |

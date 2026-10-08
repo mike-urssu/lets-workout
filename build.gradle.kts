@@ -5,6 +5,7 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("plugin.jpa") version "2.3.21"
     id("com.google.cloud.tools.jib") version "3.5.4"
+    id("org.jooq.jooq-codegen-gradle") version "3.21.7" // keep in step with Spring Boot's managed jOOQ
 }
 
 group = "cloud.jjoon"
@@ -32,6 +33,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("tools.jackson.module:jackson-module-kotlin")
     runtimeOnly("org.postgresql:postgresql")
+    jooqCodegen("org.jooq:jooq-meta-extensions:3.21.7")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
     testImplementation("org.springframework.boot:spring-boot-starter-flyway-test")
     testImplementation("org.springframework.boot:spring-boot-starter-jooq-test")
@@ -53,6 +55,36 @@ allOpen {
     annotation("jakarta.persistence.Entity")
     annotation("jakarta.persistence.MappedSuperclass")
     annotation("jakarta.persistence.Embeddable")
+}
+
+// jOOQ classes are generated from the Flyway scripts; the build needs no database (DEC-ARCH-002).
+jooq {
+    configuration {
+        generator {
+            database {
+                name = "org.jooq.meta.extensions.ddl.DDLDatabase"
+                properties {
+                    property { key = "scripts"; value = "src/main/resources/db/migration/*.sql" }
+                    property { key = "sort"; value = "flyway" }
+                    property { key = "defaultNameCase"; value = "lower" }
+                    property { key = "parseIgnoreComments"; value = "true" }
+                }
+                forcedTypes {
+                    forcedType {
+                        name = "INSTANT"
+                        includeTypes = "(?i)TIMESTAMP.*WITH.*TIME.*ZONE.*"
+                    }
+                }
+            }
+            target {
+                packageName = "cloud.jjoon.workout.jooq"
+            }
+        }
+    }
+}
+
+sourceSets.main {
+    java.srcDir(tasks.jooqCodegen)
 }
 
 tasks.withType<Test> {
