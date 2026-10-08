@@ -10,6 +10,7 @@ services:
     networks:
       - default
       - proxy
+      - seaweedfs
     labels:
       traefik.enable: "true"
       traefik.docker.network: proxy
@@ -21,8 +22,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      # Object storage (SeaweedFS S3 API) already running on the server. The app must also join the network it is
-      # reachable on (architecture D-TODO-ARCH-007).
+      # Object storage: the SeaweedFS S3 API already running on the server, reached over its network.
       STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
       STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET}
       STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY}
@@ -53,4 +53,7 @@ volumes:
 networks:
   # Shared with the Traefik container already running on the server.
   proxy:
+    external: true
+  # Shared with the SeaweedFS containers already running on the server.
+  seaweedfs:
     external: true

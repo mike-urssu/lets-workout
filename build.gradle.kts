@@ -95,7 +95,12 @@ tasks.withType<Test> {
 // Image name and registry credentials come from CI (Jenkinsfile): ./gradlew jib -Djib.to.image=...
 jib {
     from {
-        image = "eclipse-temurin:21-jre"
+        // Java 21 + FFmpeg 7.1 for media previews; built from deploy/base-image/Dockerfile (DEC-ARCH-015)
+        image = "ghcr.io/mike-urssu/workout-backend-base:21-ffmpeg7"
+        auth {
+            username = System.getenv("GHCR_USER")
+            password = System.getenv("GHCR_TOKEN")
+        }
         platforms {
             platform {
                 architecture = "arm64" // deploy server runs Colima on Apple Silicon

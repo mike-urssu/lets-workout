@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.10
+- 문서 버전: v0.11
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -14,6 +14,7 @@
   - v0.8 — 운영 사용 전이라 인증 스키마 변경 V1~V3을 V1 하나로 합침. D-TODO-ARCH-005 결정(PL/pgSQL은 `[jooq ignore]` 주석으로 코드 생성에서 제외). CI 에이전트 label·`DEPLOY_HOST` 전역 속성(10.8)
   - v0.9 (2026-10-09) — 오운완 사진·동영상을 위해 오브젝트 저장소(SeaweedFS, S3 API)와 서버의 미리보기 생성(FFmpeg)을 추가(DEC-ARCH-014 ~ 016). DB와 파일의 일관성 규칙(2.6), 커밋 후 작업(2.3), 파일 업로드·내려받기 규칙(5장), 503 응답(DEC-ARCH-017), 서비스가 미리 넣는 기준 데이터의 ID(DEC-ARCH-018) 추가. 1.4의 PostgreSQL 버전을 18로 바로잡음. 운동 기록 스키마 변경 V2·V3은 운영 사용 전이라 다시 만든다(workout-record 설계 6.5)
   - v0.10 (2026-10-09) — 파일 내려받기의 범위 요청과 캐시 규칙(5장, 10.1), SeaweedFS 4의 S3 인증 설정(D-TODO-ARCH-007), FFmpeg는 9.x에서 확인(D-TODO-ARCH-008). v0.9는 코드에 반영됨
+  - v0.11 (2026-10-09) — 앱 컨테이너 기반 이미지를 Debian trixie + OpenJDK 21 + FFmpeg 7.1로 확정(D-TODO-ARCH-008 결정, `deploy/base-image/Dockerfile`), SeaweedFS 네트워크 `seaweedfs`(D-TODO-ARCH-007 일부 결정)
 
 ---
 
@@ -50,14 +51,14 @@
 | jOOQ 코드 생성 (Gradle 플러그인, DDL 기반) | jOOQ와 동일 | Flyway 스크립트를 읽어 테이블 클래스를 만든다. 빌드에 DB가 필요 없다 (DEC-ARCH-002) | 실행 중인 DB에서 생성: 빌드에 DB나 컨테이너가 필요 |
 | Spring Security | Boot 관리, **추가** | 인증 필터 체인, 인증 실패 처리, 경로별 인증 적용을 표준 구조로 제공한다. 토큰 조회 필터 하나만 직접 만든다 (DEC-ARCH-011) | 보안 라이브러리 없이 필터 직접 구현: 경로별 적용·예외 처리까지 직접 만들어야 함 |
 | Bean Validation | Boot 관리, **추가** | 요청 검증을 선언적으로 처리 | 서비스에서 직접 검증: 검증 코드가 흩어짐 |
-| 컨테이너 이미지 (Jib Gradle 플러그인, eclipse-temurin 21 JRE + FFmpeg 기반 이미지) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
+| 컨테이너 이미지 (Jib Gradle 플러그인, 기반 `ghcr.io/mike-urssu/workout-backend-base:21-ffmpeg7` = Debian trixie + OpenJDK 21 JRE + FFmpeg 7.1) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
 | GitHub Container Registry (GHCR) | — | 사용자 결정. 이미지 저장소 | — |
 | Jenkins (Multibranch Pipeline) | — | 사용자 결정. 모든 브랜치 테스트, main만 이미지 배포 (10.8) | — |
 | Docker Compose | — | 서버 1대에 앱과 DB를 함께 띄운다. 배포 = 이미지 태그 교체 후 재기동 (10.8) | Kubernetes: 지금 규모에 운영 부담이 큼 |
 | Testcontainers (PostgreSQL, SeaweedFS) | 저장소 설정, SeaweedFS는 **추가** | 테스트가 운영과 같은 DB 엔진과 같은 오브젝트 저장소에서 돈다. DB 제약과 트리거, 파일 저장·삭제까지 검증 | 내장 DB(H2): 운영 DB 전용 기능을 검증할 수 없음 / 파일 저장소 가짜 구현: S3 호환성 차이를 놓침 |
 | SeaweedFS (S3 호환 API) | 서버에서 이미 운영 중 | 사용자 결정. 파일을 DB 밖에 두어 DB 크기와 백업을 가볍게 한다. S3 API로만 접근해 다른 S3 호환 저장소로 옮기기 쉽다 (DEC-ARCH-014) | 앱 서버 디스크에 직접 저장: 서버를 늘리면 파일을 공유할 수 없음 / DB에 파일 저장: DB와 백업이 커짐 |
 | AWS SDK for Java 2.x (S3 클라이언트) | **추가**, 구현 시 최신 2.x로 고정 | S3 API 표준 클라이언트. 접속 주소를 SeaweedFS로 바꿔 쓴다 (DEC-ARCH-014) | SeaweedFS 전용 HTTP API(filer): 저장소를 바꾸면 코드를 다시 써야 함 |
-| FFmpeg (`ffmpeg`, `ffprobe` 명령) | 기반 이미지의 배포판 패키지 (D-TODO-ARCH-008) | 사용자 결정(미리보기는 서버가 만든다). 동영상 첫 장면 추출, 동영상 길이 확인, HEIC 등 사진 축소를 한 도구로 처리한다 (DEC-ARCH-015) | JVM 이미지 라이브러리: HEIC·동영상을 읽지 못함 / JavaCV: 네이티브 라이브러리를 앱에 묶어 이미지가 커지고 arm64 확인이 필요 |
+| FFmpeg (`ffmpeg`, `ffprobe` 명령) | 7.1 (Debian trixie 패키지, D-TODO-ARCH-008 결정) | 사용자 결정(미리보기는 서버가 만든다). 동영상 첫 장면 추출, 동영상 길이 확인, HEIC 등 사진 축소를 한 도구로 처리한다 (DEC-ARCH-015) | JVM 이미지 라이브러리: HEIC·동영상을 읽지 못함 / JavaCV: 네이티브 라이브러리를 앱에 묶어 이미지가 커지고 arm64 확인이 필요 |
 
 ### 1.5 설계 원칙
 1. **요구사항 추적:** 모든 API, 테이블, 에러 코드는 요구사항 ID를 근거로 가진다.
@@ -543,13 +544,14 @@ aws s3 rm --recursive "s3://<버킷>/users/<사용자 ID>/" --endpoint-url "<Sea
 ### 10.8 CI/CD
 | 파일 | 역할 |
 |-----|-----|
-| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
-| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반은 `eclipse-temurin:21-jre`에 FFmpeg를 설치한 이미지(D-TODO-ARCH-008), `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
-| `deploy/compose.yaml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`. 오브젝트 저장소 접속 정보를 환경 변수 `STORAGE_S3_ENDPOINT`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`로 받고, SeaweedFS가 있는 서버 내부 네트워크에도 붙인다(D-TODO-ARCH-007). 외부 요청은 Traefik이 `workout-api.jjoon.cloud`로 받아 전달(외부 네트워크 `proxy`, 진입점 `websecure`, 인증서 `letsencrypt`). 8080은 서버 localhost에만 열어 Verify에 쓴다) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
+| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Base image(`deploy/base-image`가 마지막 성공 빌드 뒤 바뀌었거나 레지스트리에 없을 때만 `ghcr.io/<owner>/workout-backend-base:21-ffmpeg7`을 `--pull`로 다시 만들어 푸시) → Publish image(`./gradlew jib`로 `ghcr.io/<owner>/workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
+| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반은 `ghcr.io/mike-urssu/workout-backend-base:21-ffmpeg7`(`deploy/base-image/Dockerfile`, 가져올 때도 `GHCR_USER`/`GHCR_TOKEN`으로 인증), `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
+| `deploy/compose.yaml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`. 오브젝트 저장소 접속 정보를 환경 변수 `STORAGE_S3_ENDPOINT`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`로 받고, SeaweedFS가 있는 서버의 외부 네트워크 `seaweedfs`에도 붙인다. 외부 요청은 Traefik이 `workout-api.jjoon.cloud`로 받아 전달(외부 네트워크 `proxy`, 진입점 `websecure`, 인증서 `letsencrypt`). 8080은 서버 localhost에만 열어 Verify에 쓴다) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
+| `deploy/base-image/Dockerfile` | 앱 컨테이너의 기반 이미지: Debian trixie + OpenJDK 21 JRE + FFmpeg 7.1(아이폰 HEIC 타일 사진을 읽는다. Ubuntu 기반 eclipse-temurin의 FFmpeg 6.1은 못 읽음). CI의 Base image 단계가 이 디렉터리가 바뀔 때 만들어 올린다. 보안 업데이트만 받으려면 Dockerfile을 고치거나(주석 포함) 레지스트리의 태그를 지워 다시 만들게 한다 |
 | `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호, 오브젝트 저장소 접속 정보). 실제 파일은 저장소에 넣지 않는다 |
 
 Jenkins 준비:
-- 빌드 에이전트 label `macbook`. 전역 도구 JDK 이름 `jdk21`. 에이전트는 Docker를 실행할 수 있어야 한다(Testcontainers). 이미지 빌드에는 Docker가 필요 없다(Jib).
+- 빌드 에이전트 label `macbook`. 전역 도구 JDK 이름 `jdk21`. 에이전트는 Docker를 실행할 수 있어야 하고(Testcontainers, 기반 이미지 빌드) `ffmpeg`·`ffprobe`가 PATH에 있어야 한다(미디어 테스트). 앱 이미지 빌드에는 Docker가 필요 없다(Jib).
 - 자격 증명: `ghcr-credentials`(GitHub 사용자 + `write:packages` PAT), `deploy-ssh-key`(SSH 개인 키).
 - 전역 속성(Manage Jenkins → System → Global properties): `DEPLOY_HOST`(배포 서버 `user@host`). 선택 환경 변수 `GHCR_OWNER`(이미지 소유 계정·조직, 없으면 GHCR 사용자 이름), `DEPLOY_PORT`(배포 서버 SSH 포트, 없으면 22).
 
@@ -591,8 +593,8 @@ Jenkins 준비:
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
 - **D-TODO-ARCH-005** ~~DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문을 읽지 못하면~~ **결정됨 (v0.8, 운동 기록 구현 시 확인):** 부분 인덱스·`uuidv7()` 기본값은 읽는다. `CREATE FUNCTION`(PL/pgSQL)은 Pro 전용이라 `[jooq ignore]` 주석으로 제외하고 `parseIgnoreComments`를 켠다. `timestamptz`는 forcedType으로 `Instant`. 설정은 `build.gradle.kts`의 `jooq` 블록 (영향: DEC-ARCH-002)
 - **D-TODO-ARCH-006** ~~UUIDv7 생성 수단 확정~~ **결정됨 (인증 구현 시 확인):** Spring Boot 4.1.1에 포함된 Hibernate 7.4.5의 `UuidGenerator.Style.VERSION_7`을 쓴다. 라이브러리 추가 없음 (10.1)
-- **D-TODO-ARCH-007** SeaweedFS 접속 정보: S3 API(`weed s3`)가 켜져 있는지, 앱 컨테이너에서 닿는 주소와 Docker 네트워크 이름, 버킷 이름, 접속 키. SeaweedFS 4.x는 S3 인증 설정(`-s3.config`의 identities, 테스트는 `TestcontainersConfiguration` 참고)이 없으면 서명된 요청을 거절한다. 버킷은 미리 만들어 둔다. 정해지면 10.8의 compose와 `.env.example`에 넣는다. (영향: 2.4, 2.6, 10.7, 10.8)
-- **D-TODO-ARCH-008** FFmpeg를 넣은 기반 이미지: `eclipse-temurin:21-jre`에 배포판 FFmpeg를 설치한 `linux/arm64` 이미지를 만들어 GHCR에 올리는 방법(Jib은 패키지를 설치하지 못한다), 그 FFmpeg가 HEIC를 읽는지 확인(못 읽으면 libheif 추가), CI 에이전트에 테스트용 FFmpeg 설치. 개발 맥에는 Homebrew FFmpeg 9.0.2를 설치해 테스트를 통과했다(2026-10-09). (영향: 1.4, 10.1, 10.8, workout-media)
+- **D-TODO-ARCH-007** (네트워크는 `seaweedfs`로 결정, v0.11) SeaweedFS 접속 정보: S3 API(`weed s3`)가 켜져 있는지, 앱 컨테이너에서 닿는 주소와 Docker 네트워크 이름, 버킷 이름, 접속 키. SeaweedFS 4.x는 S3 인증 설정(`-s3.config`의 identities, 테스트는 `TestcontainersConfiguration` 참고)이 없으면 서명된 요청을 거절한다. 버킷은 미리 만들어 둔다. 정해지면 10.8의 compose와 `.env.example`에 넣는다. (영향: 2.4, 2.6, 10.7, 10.8)
+- **D-TODO-ARCH-008** ~~FFmpeg를 넣은 기반 이미지: `eclipse-temurin:21-jre`에 배포판 FFmpeg를 설치한 `linux/arm64` 이미지를 만들어 GHCR에 올리는 방법(Jib은 패키지를 설치하지 못한다), 그 FFmpeg가 HEIC를 읽는지 확인(못 읽으면 libheif 추가), CI 에이전트에 테스트용 FFmpeg 설치. 개발 맥에는 Homebrew FFmpeg 9.0.2를 설치해 테스트를 통과했다(2026-10-09). (영향: 1.4, 10.1, 10.8, workout-media)~~ **결정됨 (v0.11):** Debian trixie 기반 이미지에 배포판 OpenJDK 21과 FFmpeg 7.1.5를 설치(`deploy/base-image/Dockerfile`). Nokia HEIF 샘플(타일 HEIC)로 미리보기 생성을 확인했다. 이미지 크기는 약 1GB(FFmpeg 의존성). 줄여야 하면 FFmpeg 정적 빌드로 바꾼다
 
 ## 부록 C. 요구사항 피드백
 - ~~인증 요구사항 명세서가 없다~~ **해결 (v0.4):** `docs/requirements/auth.md` 작성됨.

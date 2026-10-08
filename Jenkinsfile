@@ -1,7 +1,8 @@
 // Multibranch Pipeline. Every branch is tested; only main is pushed to GHCR and deployed.
 //
 // Jenkins setup:
-//   - Global tool (JDK) named 'jdk21'; the agent must run Docker (Testcontainers). Jib builds the image without Docker.
+//   - Global tool (JDK) named 'jdk21'; the agent must run Docker (Testcontainers, base image) and have ffmpeg on the
+//     PATH (media tests). Jib builds the app image without Docker.
 //   - Agent labelled 'macbook' runs the build.
 //   - Credentials:
 //       ghcr-credentials : Username/Password = GitHub user + PAT with write:packages
@@ -24,6 +25,8 @@ pipeline {
 
     environment {
         IMAGE_NAME = 'workout-backend'
+        // Keep in step with jib.from.image in build.gradle.kts.
+        BASE_IMAGE = 'workout-backend-base:21-ffmpeg7'
         DEPLOY_DIR = '/opt/projects/workout'
     }
 
@@ -35,6 +38,31 @@ pipeline {
             post {
                 always {
                     junit 'build/test-results/test/*.xml'
+                }
+            }
+        }
+
+        // Jib builds the app on top of this image (build.gradle.kts). Rebuilt only when deploy/base-image changed since
+        // the last successful build or the registry does not have it yet; --pull picks up Debian security updates.
+        stage('Base image') {
+            when { branch 'main' }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'ghcr-credentials',
+                        usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
+                    sh '''
+                        OWNER=$(echo "${GHCR_OWNER:-$GHCR_USER}" | tr '[:upper:]' '[:lower:]')
+                        BASE="ghcr.io/$OWNER/$BASE_IMAGE"
+                        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+                        trap 'docker logout ghcr.io' EXIT
+                        if [ -n "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" ] \
+                            && git diff --quiet "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" HEAD -- deploy/base-image \
+                            && docker manifest inspect "$BASE" > /dev/null 2>&1; then
+                            echo "base image unchanged: $BASE"
+                            exit 0
+                        fi
+                        docker build --pull --platform linux/arm64 -t "$BASE" deploy/base-image
+                        docker push "$BASE"
+                    '''
                 }
             }
         }
