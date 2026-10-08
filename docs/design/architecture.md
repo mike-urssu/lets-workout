@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.8
+- 문서 버전: v0.9
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -12,6 +12,7 @@
   - v0.6 — CI/CD 추가: 컨테이너 이미지 + 레지스트리 + CI 서버 + 서버 1대 compose 배포(2.4, 10.8), PostgreSQL 18 확정(D-TODO-ARCH-001)
   - v0.7 — `users.id` 기본값을 직접 정의한 `uuid_v7()` 대신 PostgreSQL 18 내장 `uuidv7()`로 교체 (스키마 변경 V3)
   - v0.8 — 운영 사용 전이라 인증 스키마 변경 V1~V3을 V1 하나로 합침. D-TODO-ARCH-005 결정(PL/pgSQL은 `[jooq ignore]` 주석으로 코드 생성에서 제외). CI 에이전트 label·`DEPLOY_HOST` 전역 속성(10.8)
+  - v0.9 (2026-10-09) — 오운완 사진·동영상을 위해 오브젝트 저장소(SeaweedFS, S3 API)와 서버의 미리보기 생성(FFmpeg)을 추가(DEC-ARCH-014 ~ 016). DB와 파일의 일관성 규칙(2.6), 커밋 후 작업(2.3), 파일 업로드·내려받기 규칙(5장), 503 응답(DEC-ARCH-017), 서비스가 미리 넣는 기준 데이터의 ID(DEC-ARCH-018) 추가. 1.4의 PostgreSQL 버전을 18로 바로잡음. 운동 기록 스키마 변경 V2·V3은 운영 사용 전이라 다시 만든다(workout-record 설계 6.5)
 
 ---
 
@@ -32,6 +33,7 @@
 | Mobile App | 모바일 앱. 이 저장소의 API를 호출하는 유일한 클라이언트 |
 | Backend API | 이 저장소. HTTP/JSON 기반 REST API |
 | Database | 관계형 DB. 운영자가 계정 관리를 위해 직접 접근한다(7.7) |
+| Object Storage | 오브젝트 저장소. 사용자가 올린 사진·동영상 파일과 미리보기를 보관한다. Backend API만 접근하고 외부에 공개하지 않는다(2.6) |
 
 ### 1.4 기술 스택
 | 구성 요소 | 버전 | 선택 이유 | 버린 대안 |
@@ -40,18 +42,21 @@
 | JVM | Java 21 toolchain | 저장소 설정. 장기 지원(LTS) 버전 | — |
 | Spring Boot | 4.1.1 | 저장소 설정. 웹, 데이터 접근, 보안, 테스트를 한 생태계에서 해결 | — |
 | Spring Web MVC | Boot 관리 | 저장소 설정. 요청 수가 크지 않은 동기 CRUD API에 충분하고 단순하다 | WebFlux: 비동기가 필요한 요구사항이 없음 |
-| PostgreSQL | 운영 버전 D-TODO-ARCH-001 | 저장소 설정. 6장의 제약 종류(조건부 유일, 조건 검사)와 시각 타입, 트리거를 모두 기본 지원한다 | — |
+| PostgreSQL | 18 (D-TODO-ARCH-001 결정) | 저장소 설정. 6장의 제약 종류(조건부 유일, 조건 검사)와 시각 타입, 트리거를 모두 기본 지원한다 | — |
 | Flyway | Boot 관리 | 저장소 설정. 스키마 변경 스크립트를 버전 관리하고 앱 시작 시 적용 | JPA 자동 DDL: 운영 스키마를 코드가 암묵적으로 바꾸게 됨 |
 | Spring Data JPA | Boot 관리 | 저장소(단순 저장·조회)를 적은 코드로 구현 (DEC-ARCH-001) | — |
 | jOOQ | Boot 관리 | 조회 저장소(조인·집계·페이지·조건부 일괄 갱신)를 타입 안전한 SQL로 구현 (DEC-ARCH-001) | JPQL/네이티브 쿼리: 집계 쿼리가 문자열이 되어 컴파일 시 검증이 안 됨 |
 | jOOQ 코드 생성 (Gradle 플러그인, DDL 기반) | jOOQ와 동일 | Flyway 스크립트를 읽어 테이블 클래스를 만든다. 빌드에 DB가 필요 없다 (DEC-ARCH-002) | 실행 중인 DB에서 생성: 빌드에 DB나 컨테이너가 필요 |
 | Spring Security | Boot 관리, **추가** | 인증 필터 체인, 인증 실패 처리, 경로별 인증 적용을 표준 구조로 제공한다. 토큰 조회 필터 하나만 직접 만든다 (DEC-ARCH-011) | 보안 라이브러리 없이 필터 직접 구현: 경로별 적용·예외 처리까지 직접 만들어야 함 |
 | Bean Validation | Boot 관리, **추가** | 요청 검증을 선언적으로 처리 | 서비스에서 직접 검증: 검증 코드가 흩어짐 |
-| 컨테이너 이미지 (Jib Gradle 플러그인, eclipse-temurin 21 JRE 기반) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
+| 컨테이너 이미지 (Jib Gradle 플러그인, eclipse-temurin 21 JRE + FFmpeg 기반 이미지) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
 | GitHub Container Registry (GHCR) | — | 사용자 결정. 이미지 저장소 | — |
 | Jenkins (Multibranch Pipeline) | — | 사용자 결정. 모든 브랜치 테스트, main만 이미지 배포 (10.8) | — |
 | Docker Compose | — | 서버 1대에 앱과 DB를 함께 띄운다. 배포 = 이미지 태그 교체 후 재기동 (10.8) | Kubernetes: 지금 규모에 운영 부담이 큼 |
-| Testcontainers (PostgreSQL) | 저장소 설정 | 테스트가 운영과 같은 DB 엔진에서 돈다. DB 제약과 트리거까지 검증 | 내장 DB(H2): 운영 DB 전용 기능을 검증할 수 없음 |
+| Testcontainers (PostgreSQL, SeaweedFS) | 저장소 설정, SeaweedFS는 **추가** | 테스트가 운영과 같은 DB 엔진과 같은 오브젝트 저장소에서 돈다. DB 제약과 트리거, 파일 저장·삭제까지 검증 | 내장 DB(H2): 운영 DB 전용 기능을 검증할 수 없음 / 파일 저장소 가짜 구현: S3 호환성 차이를 놓침 |
+| SeaweedFS (S3 호환 API) | 서버에서 이미 운영 중 | 사용자 결정. 파일을 DB 밖에 두어 DB 크기와 백업을 가볍게 한다. S3 API로만 접근해 다른 S3 호환 저장소로 옮기기 쉽다 (DEC-ARCH-014) | 앱 서버 디스크에 직접 저장: 서버를 늘리면 파일을 공유할 수 없음 / DB에 파일 저장: DB와 백업이 커짐 |
+| AWS SDK for Java 2.x (S3 클라이언트) | **추가**, 구현 시 최신 2.x로 고정 | S3 API 표준 클라이언트. 접속 주소를 SeaweedFS로 바꿔 쓴다 (DEC-ARCH-014) | SeaweedFS 전용 HTTP API(filer): 저장소를 바꾸면 코드를 다시 써야 함 |
+| FFmpeg (`ffmpeg`, `ffprobe` 명령) | 기반 이미지의 배포판 패키지 (D-TODO-ARCH-008) | 사용자 결정(미리보기는 서버가 만든다). 동영상 첫 장면 추출, 동영상 길이 확인, HEIC 등 사진 축소를 한 도구로 처리한다 (DEC-ARCH-015) | JVM 이미지 라이브러리: HEIC·동영상을 읽지 못함 / JavaCV: 네이티브 라이브러리를 앱에 묶어 이미지가 커지고 arm64 확인이 필요 |
 
 ### 1.5 설계 원칙
 1. **요구사항 추적:** 모든 API, 테이블, 에러 코드는 요구사항 ID를 근거로 가진다.
@@ -71,6 +76,7 @@
 | 7.7 계정 관리 절차 | auth 8.2 |
 | 8장 에러 정책 | 모든 ERR, NFR-AVAIL-001 |
 | 9장 비기능 공통 | NFR-PERF-001, NFR-PERF-003, NFR-AVAIL-001, NFR-LOG-001 |
+| 2.6 오브젝트 저장소 연계, 7.4 파일 접근 제한 | workout-media NFR-SEC-001, NFR-SEC-002, NFR-AVAIL-001, NFR-INTEG-001, BR-004 |
 
 ---
 
@@ -96,7 +102,12 @@
         ▼                      ▼          ▼
      ┌──────────────────────────────────────┐        ┌──────────┐
      │   관계형 DB                           │ ◀──SQL── │ 운영자    │
-     └──────────────────────────────────────┘        └──────────┘
+     └──────────────────────────────────────┘        └────┬─────┘
+                                                          │ 계정 삭제 시 파일 삭제(10.7)
+  서비스 ─▶ 파일 저장소 ─S3 API(내부망)─▶ ┌───────────────────┐   │
+  서비스 ─▶ 미디어 처리기(ffmpeg)          │ 오브젝트 저장소     │ ◀─┘
+                                         │ (외부 비공개)      │
+                                         └───────────────────┘
 ```
 
 ### 2.2 컴포넌트 역할
@@ -110,6 +121,8 @@
 | 저장소 | 단순한 데이터 접근: 행 하나를 저장·수정·삭제, ID로 단건 조회, 존재 확인 |
 | 조회 저장소 | 복잡한 데이터 접근: 조인, 집계, 페이지 목록, 조건부 일괄 갱신 |
 | 전역 예외 처리기 | 모든 예외를 8장 에러 응답으로 변환 |
+| 파일 저장소 | 오브젝트 저장소에 파일을 넣고, 꺼내고, 지운다. 파일 키 규칙(2.6)을 한 곳에서 정한다. 비즈니스 규칙을 두지 않는다 |
+| 미디어 처리기 | 올라온 파일의 실제 형식 확인, 동영상 길이 확인, 미리보기 이미지 생성. 임시 파일을 쓰고 끝나면 지운다 |
 | Mobile App | 화면 표시, 사용자 입력, 토큰 보관(기기 보안 저장소), 에러 코드별 화면 처리 |
 | 관계형 DB | 영속 데이터, 6장 제약과 자동 동작으로 규칙 보장 |
 | 운영자 | DB에 직접 접근해 계정을 관리한다(7.7). 서비스의 컴포넌트는 아니다 |
@@ -125,6 +138,7 @@
 | 조건부 일괄 갱신 | 조건에 맞는 행을 한 문장으로 갱신·삭제한다. 여러 번, 여러 서버에서 동시에 실행해도 결과가 같다(멱등) |
 | 제약 위반 변환 | 이름으로 지정한 DB 제약의 위반을 정해진 에러 코드로 바꾼다 |
 | 확정 후 오류 응답 | 변경을 먼저 확정(커밋)한 뒤 오류 응답을 보낸다. 오류 응답이어도 남아야 하는 기록(예: 로그인 실패 횟수)에 쓴다 |
+| 커밋 후 작업 | 트랜잭션이 확정(커밋)된 뒤에만 실행하는 작업. 트랜잭션이 취소되면 실행하지 않는다. 실패해도 확정된 DB 변경은 되돌리지 않는다. 오브젝트 저장소의 파일 삭제에 쓴다(2.6) |
 | DB 자동 동작 | 특정 컬럼이 바뀌면 DB가 정해진 갱신을 스스로 수행한다. 애플리케이션을 거치지 않는 변경(운영자 SQL)에도 규칙을 지키게 할 때만 쓴다 (DEC-ARCH-013) |
 
 ### 2.4 서버 / 네트워크 / 배포
@@ -132,17 +146,28 @@
 - 네트워크: 클라이언트와 서버 사이는 HTTPS만 허용한다. TLS는 서버의 Traefik이 종료하고 `https://workout-api.jjoon.cloud`를 앱으로 전달한다(10.8).
 - DB 접근: 애플리케이션과 운영자만 접근한다. 운영자 접근 경로와 권한은 배포 환경에서 정한다(7.7, D-TODO-ARCH-002).
 - 배포: CI 서버가 테스트를 통과한 커밋의 컨테이너 이미지를 레지스트리에 올리고, 서버 1대에 접속해 그 이미지로 앱을 교체한 뒤 기동을 확인한다. DB도 같은 서버의 컨테이너로 둔다. 상세는 10.8
-- 남은 결정: DB 백업, 운영자 DB 접근 경로 (D-TODO-ARCH-002)
+- 오브젝트 저장소: 같은 서버에서 따로 운영 중인 SeaweedFS를 쓴다. 앱 컨테이너는 서버 내부 네트워크로 S3 API에 접근하고, 저장소는 외부에 공개하지 않는다. 접속 정보는 D-TODO-ARCH-007
+- 남은 결정: DB와 파일 백업, 운영자 DB 접근 경로 (D-TODO-ARCH-002)
 
 ### 2.5 데이터 흐름
 ```
 요청 → 인증 필터(로그인 조회·연장, userId) → API 진입점(요청 검증) → 서비스(트랜잭션: 규칙·소유자·상태 확인)
      → 저장소 / 조회 저장소 → 관계형 DB → 응답 변환 → JSON
+파일 업로드 시 → 미디어 처리기(형식·길이 확인, 미리보기) → 파일 저장소 → 오브젝트 저장소 → (그다음) DB 기록
 예외 발생 시 → 전역 예외 처리기(8장) → 에러 JSON
 ```
 
 ### 2.6 외부 시스템 연계
-현재 없음.
+
+#### 오브젝트 저장소 (DEC-ARCH-014, DEC-ARCH-016)
+| 항목 | 규칙 |
+|-----|-----|
+| 접근 | Backend API의 파일 저장소 컴포넌트만 S3 API로 접근한다. 버킷 하나를 쓴다(D-TODO-ARCH-007) |
+| 공개 여부 | 비공개. 앱에 저장소 주소나 서명된 임시 주소를 주지 않는다. 앱은 API로 올리고, API가 소유자를 확인한 뒤 내려준다(7.4) |
+| 파일 키 | `users/{userId}/` 아래에 둔다. 기능별 하위 경로는 기능 설계에서 정한다(예: workout-media 6.2). 사용자 한 명의 파일을 접두어 하나로 지울 수 있게 하기 위해서다(7.7) |
+| 저장 순서 | 파일을 먼저 저장하고, 그다음 DB에 기록한다. DB 기록이 실패하면 방금 저장한 파일을 지운다. 지우지 못한 파일은 DB가 가리키지 않으므로 사용자에게 보이지 않는다 |
+| 삭제 순서 | DB 행을 먼저 지우고, **커밋 후 작업**으로 파일을 지운다. 파일 삭제가 실패하면 WARN 로그(`storage.delete_failed`, 키)를 남기고 요청은 성공으로 끝낸다 |
+| 장애 | 저장소에 접근하지 못하면 503 `SERVICE_UNAVAILABLE`(8.3). DB 변경은 확정하지 않는다 |
 
 ---
 
@@ -183,6 +208,8 @@
 | 페이지 응답 | `{ "content": [...], "page": 0, "size": 20, "totalElements": 135, "totalPages": 7 }` |
 | 사용자 시간대 | 사용자 현지 날짜가 필요한 요청은 `X-Time-Zone` 헤더(IANA 시간대 이름, 예: `Asia/Seoul`)로 받는다 (DEC-ARCH-007) |
 | 인증 | `Authorization: Bearer <로그인 토큰>` (7.1) |
+| 파일 업로드 | `multipart/form-data`, 파일 부분 이름 `file`, 한 요청에 파일 하나. 실제 형식은 내용으로 확인하고 요청의 형식 표시는 믿지 않는다. 서버 전체 상한은 10.1 |
+| 파일 내려받기 | 본문이 파일 자체, `Content-Type`은 저장된 형식. JSON으로 감싸지 않는다 |
 
 ---
 
@@ -269,6 +296,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 - 사용자 ID는 항상 인증 필터가 확인한 로그인에서 얻는다. 요청 본문이나 경로로 받은 사용자 ID는 쓰지 않는다.
 - 단건 대상(경로의 ID)은 서비스에서 조회 후 소유자를 비교한다. 없으면 404, 다른 사용자 것이면 403.
 - 목록 조회는 조회 조건에 `user_id = 현재 사용자`를 반드시 넣는다.
+- 파일은 DB의 소유자를 확인한 뒤에만 API가 오브젝트 저장소에서 읽어 내려준다. 파일 키를 요청으로 받지 않는다(키는 서버가 ID로 만든다).
 
 ### 7.5 기타 보안
 | 항목 | 정책 |
@@ -286,6 +314,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 
 ### 7.7 계정 관리 (운영자)
 - 계정 발급, PIN 재발급, 잠금 해제, 계정 삭제는 운영자가 DB에 직접 SQL로 한다(auth 요구사항 8.2). 서비스에는 관리 API·화면이 없다.
+- 계정을 삭제할 때는 오브젝트 저장소의 `users/{userId}/` 아래 파일도 지운다. DB 참조(함께 삭제)는 파일까지 지우지 못하므로 운영 절차에 넣는다(10.7, workout-media BR-004).
 - SQL로 바꾸더라도 규칙이 지켜지도록 DB가 보장한다: 아이디 유일·형식, PIN 형식은 제약으로, PIN 변경 시 로그인 종료는 DB 자동 동작으로, 계정 삭제 시 사용자 데이터 삭제는 참조(함께 삭제)로 (auth 설계 6장).
 - 절차(SQL)는 10.7.
 - 평문 PIN 보완책: DB 접근 계정은 운영자와 애플리케이션만 갖고 권한을 최소화한다. DB 백업은 암호화해 보관한다. 상세는 배포 환경과 함께 정한다 (D-TODO-ARCH-002).
@@ -319,6 +348,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 404 | 대상 없음 |
 | 409 | 현재 상태와 충돌하는 요청 (이미 완료됨, 이미 진행 중인 것이 있음 등 비즈니스 상태 위반) |
 | 500 | 예상하지 못한 서버 오류 |
+| 503 | 의존하는 외부 시스템(오브젝트 저장소) 장애. 요청은 처리되지 않았고 다시 시도할 수 있다 (DEC-ARCH-017) |
 
 ### 8.3 공통 에러 코드
 | 에러 코드 | HTTP | 메시지 |
@@ -328,6 +358,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | FORBIDDEN | 403 | 접근할 수 없는 데이터입니다. |
 | NOT_FOUND | 404 | 요청한 경로를 찾을 수 없습니다. (정의되지 않은 URL) |
 | INTERNAL_ERROR | 500 | 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. |
+| SERVICE_UNAVAILABLE | 503 | 일시적으로 처리할 수 없습니다. 잠시 후 다시 시도해 주세요. |
 
 기능별 에러 코드는 기능 설계 문서 8장에서 `<대상>_<상황>` 형식으로 정한다. 예: `WORKOUT_SESSION_NOT_FOUND`.
 
@@ -338,6 +369,8 @@ API 요청: Authorization: Bearer <로그인 토큰>
   - 요청 검증 실패, JSON 형식 오류, 타입 불일치(정수 필드에 소수 포함, UUID 형식 오류) → 400 VALIDATION_FAILED
   - 웹 프레임워크가 판단한 그 밖의 요청 오류(지원하지 않는 Content-Type·HTTP 메서드 등) → 400 VALIDATION_FAILED, ERROR 로그를 남기지 않음
   - 정의되지 않은 URL → 404 NOT_FOUND
+  - 업로드 크기가 서버 전체 상한(10.1)을 넘음 → 400 VALIDATION_FAILED. 기능별 상한(예: 사진 20MB)은 서비스가 확인해 기능 에러 코드로 응답한다
+  - 파일 저장소가 오브젝트 저장소에 접근하지 못함 → 503 SERVICE_UNAVAILABLE, ERROR 로그
   - 기능 설계에서 "제약 위반 변환"으로 지정한 DB 제약 위반 → 지정한 에러 코드
   - 그 밖의 예외(지정하지 않은 DB 제약 위반 포함) → 500 INTERNAL_ERROR, ERROR 로그
 - 인증 필터에서 나는 401도 같은 형식으로 응답한다.
@@ -349,7 +382,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 |-----|-----|
 | 성능 | 요청당 쿼리 수를 고정한다(목록·상세는 조회 저장소에서 조인/집계로 한 번에 읽어 N+1을 만들지 않는다). 인증 필터는 요청당 조회 1회 + 연장 갱신 1회. 목록은 항상 페이지 단위. 조회 조건에는 인덱스를 둔다 |
 | 확장성 | 무상태 서버. 로그인 상태는 DB에 있어 어느 서버로 요청이 가도 같다. 서버 여러 대에서 동시에 돌 수 있는 작업은 조건부 일괄 갱신처럼 멱등하게 만든다 |
-| 가용성 | 요청 하나 = 트랜잭션 하나로 일부만 저장되는 일이 없게 한다. 오류는 8장 형식. DB 백업 정책은 배포 환경과 함께 정한다 (D-TODO-ARCH-002) |
+| 가용성 | 요청 하나 = 트랜잭션 하나로 일부만 저장되는 일이 없게 한다. 파일과 DB는 2.6의 순서로 맞춘다. 오브젝트 저장소 장애는 503으로 알리고 DB는 바꾸지 않는다. 오류는 8장 형식. DB·파일 백업 정책은 배포 환경과 함께 정한다 (D-TODO-ARCH-002) |
 | 로깅 | 주요 사용자 행위는 INFO로 `event`, `userId`, 대상 ID를 남긴다. 처리하지 못한 예외는 ERROR와 스택 트레이스. 토큰·PIN은 남기지 않는다(7.5) |
 | 성능 검증 | 응답 시간·동시 사용자 목표는 부하 테스트로 확인한다. 도구와 환경은 D-TODO-ARCH-004 |
 
@@ -370,6 +403,8 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 저장소 | Spring Data JPA Repository 인터페이스 + JPA 엔티티. 엔티티 간 연관관계를 매핑하지 않고 참조 ID 필드만 둔다 (DEC-ARCH-008) |
 | 조회 저장소 | jOOQ `DSLContext`를 쓰는 `*QueryRepository` 클래스 |
 | 전역 예외 처리기 | `@RestControllerAdvice` + 인증 실패 처리기(같은 응답 형식) |
+| 파일 저장소 | `ObjectStorage` 클래스 하나. AWS SDK v2 `S3Client`(접속 주소 `endpointOverride`, 경로 방식 주소 `forcePathStyle(true)`, 접속 키는 환경 변수)로 `putObject`/`getObject`/`deleteObject`/`listObjectsV2`+`deleteObjects`(접두어 삭제). `SdkException`은 503 `SERVICE_UNAVAILABLE`로 바꾼다 |
+| 미디어 처리기 | `MediaProcessor` 클래스. `ProcessBuilder`로 `ffprobe`(형식·길이)와 `ffmpeg`(미리보기 JPEG)를 실행한다. 입력은 임시 파일, 실행 시간 제한을 두고, 끝나면 임시 파일을 지운다 |
 
 **동시성·트랜잭션 (2.3)**
 | 용어 | 현재 구현 |
@@ -382,6 +417,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 확정 후 오류 응답 | 서비스가 예외 대신 결과 값(성공/실패 사유)을 반환해 트랜잭션을 정상 커밋하고, API 진입점이 실패 결과를 비즈니스 예외로 바꿔 응답 (`@Transactional`은 예외 시 롤백하므로) |
 | DB 자동 동작 | PostgreSQL 트리거(`CREATE TRIGGER trg_... AFTER UPDATE OF <컬럼>` + PL/pgSQL 함수). 스키마 변경 스크립트로 만든다 |
 | JPA 변경 후 jOOQ 조회 | 같은 트랜잭션에서 JPA로 바꾼 내용을 jOOQ로 읽기 전에 `flush` |
+| 커밋 후 작업 | `TransactionSynchronizationManager.registerSynchronization`의 `afterCommit`에 등록. 트랜잭션 밖에서 호출되면 바로 실행 |
 
 **논리 타입 (6.2)**
 | 논리 타입 | PostgreSQL | Kotlin |
@@ -420,7 +456,10 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 시간이 일정한 비교 (PIN) | `java.security.MessageDigest.isEqual` (바이트 배열 비교) |
 | 스키마 변경 스크립트 | Flyway, `src/main/resources/db/migration/V<번호>__<설명>.sql`. 애플리케이션 시작 시 적용, JPA `ddl-auto: validate` (DEC-ARCH-003). jOOQ 오픈소스 DDL 파서가 읽지 못하는 구문(PL/pgSQL 함수·트리거)은 `-- [jooq ignore start]` / `-- [jooq ignore stop]` 주석으로 감싼다 (D-TODO-ARCH-005) |
 | 공개 정적 파일 | `src/main/resources/static/` 아래 파일을 URL 루트 기준으로 제공. 보안 설정에서 해당 경로를 인증 없이 허용 |
-| API 수준 통합 테스트 | MockMvc + Testcontainers PostgreSQL(`TestcontainersConfiguration`) |
+| 파일 업로드 (5장) | `MultipartFile`. 서버 전체 상한 `spring.servlet.multipart.max-file-size`·`max-request-size` = `110MB`(기능 상한 100MB보다 조금 크게 두어, 기능 상한 초과를 서비스가 정확한 에러 코드로 알리게 한다). 초과 시 `MaxUploadSizeExceededException` → 400 |
+| 파일 내려받기 (5장) | `ResponseEntity<StreamingResponseBody>` 또는 `InputStreamResource`, `Content-Type`·`Content-Length` 지정 |
+| 서비스가 미리 넣는 기준 데이터의 ID (DEC-ARCH-018) | 스키마 변경 스크립트의 `INSERT`에서 PostgreSQL 18 `uuidv7()` |
+| API 수준 통합 테스트 | MockMvc + Testcontainers PostgreSQL(`TestcontainersConfiguration`). 파일을 다루는 테스트는 SeaweedFS 컨테이너(`chrislusf/seaweedfs`, `server -s3`)를 함께 띄운다. 미디어 처리 테스트는 실행 환경에 FFmpeg가 있어야 한다(D-TODO-ARCH-008) |
 | 테스트 인증 | 테스트 픽스처가 `users`·`login_session` 행을 직접 넣고 그 토큰을 `Authorization` 헤더로 보낸다 |
 
 ### 10.2 패키지 구조
@@ -430,6 +469,7 @@ cloud.jjoon.workout
 ├── common/
 │   ├── error/        ErrorCode, BusinessException, GlobalExceptionHandler, ErrorResponse
 │   ├── security/     SecurityConfig, 인증 필터, 현재 사용자 ID 주입
+│   ├── storage/      ObjectStorage(파일 저장소), MediaProcessor(미디어 처리기), 커밋 후 작업 도우미
 │   └── web/          PageResponse, 시간대 헤더 처리
 ├── <도메인>/
 │   ├── controller/   API 진입점, 요청/응답 DTO
@@ -485,17 +525,27 @@ UPDATE users SET failed_pin_count = 0, locked_until = NULL, updated_at = now()
  WHERE login_id = 'joonhee.song';
 
 -- 계정 삭제: 로그인과 운동 기록 등 모든 사용자 데이터가 함께 삭제된다(되돌릴 수 없음)
+-- 1) 먼저 사용자 ID를 확인한다
+SELECT id FROM users WHERE login_id = 'joonhee.song';
+-- 2) 오브젝트 저장소에서 그 사용자의 파일을 지운다 (아래 셸 명령)
+-- 3) 계정을 지운다
 DELETE FROM users WHERE login_id = 'joonhee.song';
 ```
+
+```sh
+# 계정 삭제 2단계: 오브젝트 저장소의 사용자 파일 삭제 (S3 호환 CLI 예. 접속 정보는 D-TODO-ARCH-007)
+aws s3 rm --recursive "s3://<버킷>/users/<사용자 ID>/" --endpoint-url "<SeaweedFS S3 주소>"
+```
+파일 삭제를 빠뜨리고 계정을 먼저 지웠다면, 지운 사용자 ID로 같은 명령을 실행하면 된다(DB는 그 파일을 더 이상 가리키지 않는다).
 
 
 ### 10.8 CI/CD
 | 파일 | 역할 |
 |-----|-----|
 | `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Publish image(`./gradlew jib`로 `ghcr.io/<owner>/workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
-| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반 `eclipse-temurin:21-jre`, `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
-| `deploy/compose.yaml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`. 외부 요청은 Traefik이 `workout-api.jjoon.cloud`로 받아 전달(외부 네트워크 `proxy`, 진입점 `websecure`, 인증서 `letsencrypt`). 8080은 서버 localhost에만 열어 Verify에 쓴다) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
-| `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호). 실제 파일은 저장소에 넣지 않는다 |
+| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반은 `eclipse-temurin:21-jre`에 FFmpeg를 설치한 이미지(D-TODO-ARCH-008), `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
+| `deploy/compose.yaml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`. 오브젝트 저장소 접속 정보를 환경 변수 `STORAGE_S3_ENDPOINT`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`로 받고, SeaweedFS가 있는 서버 내부 네트워크에도 붙인다(D-TODO-ARCH-007). 외부 요청은 Traefik이 `workout-api.jjoon.cloud`로 받아 전달(외부 네트워크 `proxy`, 진입점 `websecure`, 인증서 `letsencrypt`). 8080은 서버 localhost에만 열어 Verify에 쓴다) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
+| `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호, 오브젝트 저장소 접속 정보). 실제 파일은 저장소에 넣지 않는다 |
 
 Jenkins 준비:
 - 빌드 에이전트 label `macbook`. 전역 도구 JDK 이름 `jdk21`. 에이전트는 Docker를 실행할 수 있어야 한다(Testcontainers). 이미지 빌드에는 Docker가 필요 없다(Jib).
@@ -527,14 +577,21 @@ Jenkins 준비:
 | DEC-ARCH-011 | 인증은 로그인 토큰 하나(256비트 난수, 서버에는 해시만 저장) + 요청마다 서버의 로그인 행 조회. 재발급(Refresh) 없음. 인증 필터는 Spring Security에 직접 만든 필터 하나로 구현 | 사용자 결정. 요구사항이 즉시 종료(auth BR-005, BR-011), 종료 사유 구분(auth ERR-005, 006, 008), 사용할 때마다 30일 연장(auth BR-006)을 요구해 어느 방식이든 요청마다 서버 조회가 필요하다. 서버 조회를 하면 JWT의 장점(조회 없는 검증)이 사라지고, 토큰 하나면 재발급 흐름이 필요 없다 | JWT + Refresh + 서버 조회: 서버 조회를 하면서 토큰 두 개와 재발급 흐름만 남아 가장 복잡 / JWT만(짧은 만료): 즉시 종료·사유 구분을 지킬 수 없음 |
 | DEC-ARCH-012 | `users.id`는 예외적으로 DB가 UUIDv7을 생성한다 | 운영자가 SQL로 계정을 만들기 때문에(auth 요구사항 8.2) 애플리케이션이 ID를 만들 수 없다. 같은 UUIDv7 형식을 유지한다 | 운영자가 외부 도구로 UUID 생성 후 입력: 실수와 형식 불일치 위험 |
 | DEC-ARCH-013 | 운영자 SQL로 바뀌는 데이터에 따른 규칙(PIN 변경 시 로그인 종료)은 DB 자동 동작(트리거)으로 보장한다. 그 밖의 규칙은 애플리케이션에 둔다 | 운영자가 SQL 한 줄을 빠뜨려도 규칙이 지켜진다(auth BR-011). 애플리케이션을 거치지 않는 변경은 애플리케이션이 알 수 없다 | 운영 절차에 로그인 종료 SQL을 함께 적기: 운영자가 빠뜨리면 규칙이 깨짐 / 요청마다 PIN 비교: 로그인 행에 PIN 정보를 따로 보관해야 함 |
+| DEC-ARCH-014 | 사용자 파일은 오브젝트 저장소(SeaweedFS)에 S3 API로 저장하고, 저장소는 공개하지 않는다. 앱은 API로 올리고 내려받는다 | 사용자 결정(SeaweedFS). S3 API는 표준이라 저장소를 바꿔도 코드가 그대로다. 비공개로 두면 소유자 확인(7.4, workout-media BR-001)을 API 한 곳에서 할 수 있고, 저장소 주소를 외부에 열 필요가 없다. **한계:** 파일이 앱 서버를 거치므로 서버 대역폭과 메모리를 쓴다(스트리밍으로 처리). 부하가 커지면 서명된 임시 주소로 바꾼다 | 서명된 임시 주소(presigned URL)로 앱이 저장소와 직접 주고받기: 저장소를 외부에 공개해야 하고, 업로드 검증(형식·길이·미리보기)을 올린 뒤에 따로 해야 함 / 앱 서버 디스크: 서버를 늘리면 공유 불가 |
+| DEC-ARCH-015 | 미리보기는 서버가 FFmpeg 명령으로 업로드 요청 안에서 만든다. FFmpeg는 앱 컨테이너의 기반 이미지에 넣는다 | 사용자 결정(서버가 만든다). 동영상 첫 장면, 동영상 길이, HEIC 사진을 한 도구로 다룰 수 있다. 업로드 요청 안에서 만들면 "올렸는데 미리보기가 없는" 중간 상태가 없다 | 별도 작업 큐에서 나중에 생성: 중간 상태와 재시도 처리가 필요 / JavaCV: 앱 이미지가 크게 늘고 arm64 확인 필요 |
+| DEC-ARCH-016 | 파일은 먼저 저장하고 DB에 기록한다. 삭제는 DB 먼저, 파일은 커밋 후 작업으로. 파일 키는 `users/{userId}/` 아래 | DB와 오브젝트 저장소는 하나의 트랜잭션으로 묶을 수 없다. 이 순서면 실패해도 "DB가 가리키는데 파일이 없는" 상태가 생기지 않는다. 남을 수 있는 것은 DB가 가리키지 않는 파일뿐이라 사용자에게 보이지 않는다. 사용자 접두어 덕분에 계정 삭제 때 파일을 한 번에 지울 수 있다(7.7) | DB 먼저 기록 후 파일 저장: 저장 실패 시 DB가 없는 파일을 가리킴 / 주기적인 고아 파일 정리 작업: 지금 규모에 불필요한 작업 실행 환경 |
+| DEC-ARCH-017 | 오브젝트 저장소 장애는 503 `SERVICE_UNAVAILABLE` | 입력이나 상태 문제가 아니라 다시 시도하면 되는 일시 장애라는 것을 앱이 구분할 수 있다(workout-media ERR-006) | 500: 예상하지 못한 오류(버그)와 구분되지 않음 |
+| DEC-ARCH-018 | 서비스가 미리 넣는 기준 데이터(운동 부위·종목)의 행은 스키마 변경 스크립트가 넣고, ID는 DB가 UUIDv7로 만든다 (DEC-ARCH-012의 예외를 기준 데이터로 넓힘) | 애플리케이션을 거치지 않고 스크립트로 넣는 행이라 애플리케이션이 ID를 만들 수 없다. 같은 UUIDv7 형식을 유지한다 | 스크립트에 UUID를 직접 적기: 실수 위험, 형식 확인 어려움 |
 
 ## 부록 B. 설계 미결정 사항
 - **D-TODO-ARCH-001** ~~운영 PostgreSQL 버전 결정~~ **결정됨 (v0.6): PostgreSQL 18.** 배포 compose와 테스트(Testcontainers)를 모두 `postgres:18`로 고정했다.
-- **D-TODO-ARCH-002** 배포 환경 중 남은 것: DB 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker compose exec db psql` 등). 서버 1대 compose 배포와 Traefik TLS 종료는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
+- **D-TODO-ARCH-002** 배포 환경 중 남은 것: DB와 오브젝트 저장소 파일의 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker compose exec db psql` 등). 서버 1대 compose 배포와 Traefik TLS 종료는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
 - **D-TODO-ARCH-003** ~~Access/Refresh Token 만료 시간~~ **결정됨 (v0.4):** 로그인 토큰 하나, 마지막 사용 후 30일 (auth BR-006, DEC-ARCH-011)
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
 - **D-TODO-ARCH-005** ~~DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문을 읽지 못하면~~ **결정됨 (v0.8, 운동 기록 구현 시 확인):** 부분 인덱스·`uuidv7()` 기본값은 읽는다. `CREATE FUNCTION`(PL/pgSQL)은 Pro 전용이라 `[jooq ignore]` 주석으로 제외하고 `parseIgnoreComments`를 켠다. `timestamptz`는 forcedType으로 `Instant`. 설정은 `build.gradle.kts`의 `jooq` 블록 (영향: DEC-ARCH-002)
 - **D-TODO-ARCH-006** ~~UUIDv7 생성 수단 확정~~ **결정됨 (인증 구현 시 확인):** Spring Boot 4.1.1에 포함된 Hibernate 7.4.5의 `UuidGenerator.Style.VERSION_7`을 쓴다. 라이브러리 추가 없음 (10.1)
+- **D-TODO-ARCH-007** SeaweedFS 접속 정보: S3 API(`weed s3`)가 켜져 있는지, 앱 컨테이너에서 닿는 주소와 Docker 네트워크 이름, 버킷 이름, 접속 키. 정해지면 10.8의 compose와 `.env.example`에 넣는다. (영향: 2.4, 2.6, 10.7, 10.8)
+- **D-TODO-ARCH-008** FFmpeg를 넣은 기반 이미지: `eclipse-temurin:21-jre`에 배포판 FFmpeg를 설치한 `linux/arm64` 이미지를 만들어 GHCR에 올리는 방법(Jib은 패키지를 설치하지 못한다), 그 FFmpeg가 HEIC를 읽는지 확인(못 읽으면 libheif 추가), CI 에이전트에 테스트용 FFmpeg 설치. (영향: 1.4, 10.1, 10.8, workout-media)
 
 ## 부록 C. 요구사항 피드백
 - ~~인증 요구사항 명세서가 없다~~ **해결 (v0.4):** `docs/requirements/auth.md` 작성됨.
