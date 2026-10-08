@@ -52,8 +52,13 @@ pipeline {
                     sh '''
                         OWNER=$(echo "${GHCR_OWNER:-$GHCR_USER}" | tr '[:upper:]' '[:lower:]')
                         BASE="ghcr.io/$OWNER/$BASE_IMAGE"
+                        # The agent runs as a system daemon without the user's keychain, so Docker's "desktop" credential
+                        # store fails. Log in with a throwaway config instead; it is removed when the step ends.
+                        export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+                        export DOCKER_CONFIG="$(mktemp -d)"
+                        trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+                        ln -s "$HOME/.docker/cli-plugins" "$DOCKER_CONFIG/cli-plugins" # buildx
                         echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-                        trap 'docker logout ghcr.io' EXIT
                         if [ -n "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" ] \
                             && git diff --quiet "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" HEAD -- deploy/base-image \
                             && docker manifest inspect "$BASE" > /dev/null 2>&1; then
