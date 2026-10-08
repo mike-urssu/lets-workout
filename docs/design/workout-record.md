@@ -850,13 +850,13 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 - `exercise`는 삭제하지 않는다(사용 중이면 참조(삭제 금지)가 막는다).
 
 ### 6.5 스키마 변경 목록
-인증 설계의 스키마 변경 1·2(users, login_session) 다음 순서로 적용한다. 스크립트 파일 규칙은 공통 설계 10.1을 따른다.
+인증 설계의 스키마 변경 1~3(users, login_session, users.id 기본값) 다음 순서로 적용한다. 스크립트 파일 규칙은 공통 설계 10.1을 따른다.
 
 | 순서 | 변경 | 내용 |
 |-----|-----|-----|
-| 3 | exercise 생성 | `exercise` 테이블, `ux_exercise_name` |
-| 4 | 운동 세션 생성 | `workout_session`, `workout_session_exercise`, `workout_set`과 6.2의 제약, 6.3의 인덱스 |
-| 5 (보류) | 초기 운동 목록 투입 | TODO-014 결정 후 (D-TODO-WORKOUT-001) |
+| 4 | exercise 생성 | `exercise` 테이블, `ux_exercise_name` |
+| 5 | 운동 세션 생성 | `workout_session`, `workout_session_exercise`, `workout_set`과 6.2의 제약, 6.3의 인덱스 |
+| 6 (보류) | 초기 운동 목록 투입 | TODO-014 결정 후 (D-TODO-WORKOUT-001) |
 
 ---
 

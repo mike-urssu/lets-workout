@@ -393,8 +393,9 @@ users 1 ──── N login_session          (참조: 함께 삭제)
 
 | 순서 | 변경 | 내용 |
 |-----|-----|-----|
-| 1 | users 생성 | (필요하면 UUIDv7 생성 함수, 공통 10.1) `users` 테이블과 6.2의 제약 |
+| 1 | users 생성 | `users` 테이블과 6.2의 제약 |
 | 2 | login_session 생성 | `login_session` 테이블, 6.2의 제약, 6.3의 인덱스, DB 자동 동작 `trg_users_pin_revoke_login` |
+| 3 | users.id 기본값 교체 | 기본값을 PostgreSQL 18 내장 `uuidv7()`로 바꾸고, 1에서 직접 정의한 `uuid_v7()` 함수 삭제 (공통 10.1) |
 
 ---
 

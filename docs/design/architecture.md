@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.6
+- 문서 버전: v0.7
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -10,6 +10,7 @@
   - v0.4 — 인증 방식을 "로그인 토큰 + 서버 조회"로 변경(DEC-ARCH-011, DEC-ARCH-005 대체). 에러 응답에 `details` 추가. DB 자동 동작 개념, users ID의 DB 생성 예외, 계정 관리 SQL 절차 추가
   - v0.5 — 인증 구현 반영: 한 테이블의 단순 조건부 갱신은 JPA(10.3), UUIDv7 생성 수단 확정(D-TODO-ARCH-006), `users.id`는 버전 무관 `uuid_v7()` 함수, 현재 시각은 주입한 시계(10.1)
   - v0.6 — CI/CD 추가: 컨테이너 이미지 + 레지스트리 + CI 서버 + 서버 1대 compose 배포(2.4, 10.8), PostgreSQL 18 확정(D-TODO-ARCH-001)
+  - v0.7 — `users.id` 기본값을 직접 정의한 `uuid_v7()` 대신 PostgreSQL 18 내장 `uuidv7()`로 교체 (스키마 변경 V3)
 
 ---
 
@@ -385,7 +386,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 논리 타입 | PostgreSQL | Kotlin |
 |----------|-----------|--------|
 | ID | `uuid` (PK·참조 컬럼 모두. 애플리케이션 생성 테이블은 DB 기본값 없음) | `java.util.UUID`. `@Id @GeneratedValue @UuidGenerator(style = UuidGenerator.Style.VERSION_7)` (Hibernate 7.4) |
-| ID (DB 생성 예외, `users`) | `uuid DEFAULT uuid_v7()`. `uuid_v7()`은 스키마 변경 스크립트(V1)에 정의한 SQL 함수로, PostgreSQL 버전과 관계없이 동작한다 | `java.util.UUID`. 애플리케이션은 `users`를 만들지 않는다 |
+| ID (DB 생성 예외, `users`) | `uuid DEFAULT uuidv7()`. PostgreSQL 18 내장 함수 | `java.util.UUID`. 애플리케이션은 `users`를 만들지 않는다 |
 | 정수 | `integer` | `Int` |
 | 소수(p,s) | `numeric(p,s)` | `BigDecimal` |
 | 문자열(n) | `varchar(n)` | `String` |
