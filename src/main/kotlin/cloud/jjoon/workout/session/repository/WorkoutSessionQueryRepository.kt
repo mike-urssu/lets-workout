@@ -17,6 +17,7 @@ import org.jooq.impl.DSL.selectOne
 import org.springframework.stereotype.Repository
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 @Repository
@@ -52,6 +53,36 @@ class WorkoutSessionQueryRepository(private val dsl: DSLContext) {
                 sets = group.filter { it.value9() != null }.map { SetRow(it.value9(), it.value10(), it.value11(), it.value12()) },
             )
         }
+    }
+
+    /**
+     * The exercise's sets from the user's latest completed session that recorded it (BR-016), in one query.
+     * In-progress sessions and sessions where the exercise has no sets are skipped.
+     */
+    fun findLastRecord(userId: UUID, exerciseId: UUID): LastRecord? {
+        val wse = WORKOUT_SESSION_EXERCISE
+        val ws = WORKOUT_SESSION
+        val latest = select(wse.ID)
+            .from(wse)
+            .join(ws).on(ws.ID.eq(wse.WORKOUT_SESSION_ID))
+            .where(wse.EXERCISE_ID.eq(exerciseId))
+            .and(ws.USER_ID.eq(userId))
+            .and(ws.STATUS.eq(WorkoutSessionStatus.COMPLETED.name))
+            .andExists(selectOne().from(WORKOUT_SET).where(WORKOUT_SET.WORKOUT_SESSION_EXERCISE_ID.eq(wse.ID)))
+            .orderBy(ws.PERFORMED_DATE.desc(), ws.STARTED_AT.desc(), ws.ID.desc())
+            .limit(1)
+        val rows = dsl.select(ws.PERFORMED_DATE, WORKOUT_SET.WEIGHT, WORKOUT_SET.REPETITIONS)
+            .from(wse)
+            .join(ws).on(ws.ID.eq(wse.WORKOUT_SESSION_ID))
+            .join(WORKOUT_SET).on(WORKOUT_SET.WORKOUT_SESSION_EXERCISE_ID.eq(wse.ID))
+            .where(wse.ID.eq(field(latest)))
+            .orderBy(WORKOUT_SET.CREATED_AT, WORKOUT_SET.ID)
+            .fetch()
+        if (rows.isEmpty()) return null
+        return LastRecord(
+            performedDate = rows.first().value1(),
+            sets = rows.mapIndexed { index, row -> LastRecordSet(index + 1, row.value2(), row.value3()) },
+        )
     }
 
     /** Completes stale sessions that have sets, ending them at their last set (BR-013). Idempotent. */
@@ -118,3 +149,7 @@ data class SessionExerciseRow(
 )
 
 data class SetRow(val id: UUID, val weight: BigDecimal, val repetitions: Int, val createdAt: Instant)
+
+data class LastRecord(val performedDate: LocalDate, val sets: List<LastRecordSet>)
+
+data class LastRecordSet(val setNumber: Int, val weight: BigDecimal, val repetitions: Int)
