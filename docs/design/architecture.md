@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.11
+- 문서 버전: v0.12
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -15,6 +15,7 @@
   - v0.9 (2026-10-09) — 오운완 사진·동영상을 위해 오브젝트 저장소(SeaweedFS, S3 API)와 서버의 미리보기 생성(FFmpeg)을 추가(DEC-ARCH-014 ~ 016). DB와 파일의 일관성 규칙(2.6), 커밋 후 작업(2.3), 파일 업로드·내려받기 규칙(5장), 503 응답(DEC-ARCH-017), 서비스가 미리 넣는 기준 데이터의 ID(DEC-ARCH-018) 추가. 1.4의 PostgreSQL 버전을 18로 바로잡음. 운동 기록 스키마 변경 V2·V3은 운영 사용 전이라 다시 만든다(workout-record 설계 6.5)
   - v0.10 (2026-10-09) — 파일 내려받기의 범위 요청과 캐시 규칙(5장, 10.1), SeaweedFS 4의 S3 인증 설정(D-TODO-ARCH-007), FFmpeg는 9.x에서 확인(D-TODO-ARCH-008). v0.9는 코드에 반영됨
   - v0.11 (2026-10-09) — 앱 컨테이너 기반 이미지를 Debian trixie + OpenJDK 21 + FFmpeg 7.1로 확정(D-TODO-ARCH-008 결정, `deploy/base-image/Dockerfile`), SeaweedFS 네트워크 `seaweedfs`(D-TODO-ARCH-007 일부 결정)
+  - v0.12 (2026-10-09) — DB를 compose 안의 전용 컨테이너 대신 서버에 이미 떠 있는 PostgreSQL 컨테이너(`postgres`, 네트워크 `postgresql`)로 바꿈. Jenkins 기반 이미지 단계의 GHCR 로그인 방식(10.8)
 
 ---
 
@@ -147,7 +148,7 @@
 - 서버: 애플리케이션 하나(무상태). 늘릴 때는 같은 애플리케이션을 여러 대 띄운다.
 - 네트워크: 클라이언트와 서버 사이는 HTTPS만 허용한다. TLS는 서버의 Traefik이 종료하고 `https://workout-api.jjoon.cloud`를 앱으로 전달한다(10.8).
 - DB 접근: 애플리케이션과 운영자만 접근한다. 운영자 접근 경로와 권한은 배포 환경에서 정한다(7.7, D-TODO-ARCH-002).
-- 배포: CI 서버가 테스트를 통과한 커밋의 컨테이너 이미지를 레지스트리에 올리고, 서버 1대에 접속해 그 이미지로 앱을 교체한 뒤 기동을 확인한다. DB도 같은 서버의 컨테이너로 둔다. 상세는 10.8
+- 배포: CI 서버가 테스트를 통과한 커밋의 컨테이너 이미지를 레지스트리에 올리고, 서버 1대에 접속해 그 이미지로 앱을 교체한 뒤 기동을 확인한다. DB는 같은 서버에 따로 운영 중인 PostgreSQL 컨테이너(`postgres`)를 쓰고, 그 안의 `workout` DB와 계정은 미리 만들어 둔다. 상세는 10.8
 - 오브젝트 저장소: 같은 서버에서 따로 운영 중인 SeaweedFS를 쓴다. 앱 컨테이너는 서버 내부 네트워크로 S3 API에 접근하고, 저장소는 외부에 공개하지 않는다. 접속 정보는 D-TODO-ARCH-007
 - 남은 결정: DB와 파일 백업, 운영자 DB 접근 경로 (D-TODO-ARCH-002)
 
@@ -546,7 +547,7 @@ aws s3 rm --recursive "s3://<버킷>/users/<사용자 ID>/" --endpoint-url "<Sea
 |-----|-----|
 | `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Base image(`deploy/base-image`가 마지막 성공 빌드 뒤 바뀌었거나 레지스트리에 없을 때만 `ghcr.io/<owner>/workout-backend-base:21-ffmpeg7`을 `--pull`로 다시 만들어 푸시) → Publish image(`./gradlew jib`로 `ghcr.io/<owner>/workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
 | `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반은 `ghcr.io/mike-urssu/workout-backend-base:21-ffmpeg7`(`deploy/base-image/Dockerfile`, 가져올 때도 `GHCR_USER`/`GHCR_TOKEN`으로 인증), `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
-| `deploy/compose.yaml` | `app`(이미지 `${IMAGE}:${IMAGE_TAG}`. 오브젝트 저장소 접속 정보를 환경 변수 `STORAGE_S3_ENDPOINT`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY`, `STORAGE_S3_SECRET_KEY`로 받고, SeaweedFS가 있는 서버의 외부 네트워크 `seaweedfs`에도 붙인다. 외부 요청은 Traefik이 `workout-api.jjoon.cloud`로 받아 전달(외부 네트워크 `proxy`, 진입점 `websecure`, 인증서 `letsencrypt`). 8080은 서버 localhost에만 열어 Verify에 쓴다) + `db`(`postgres:18`, 볼륨 `db-data`, 외부 포트 없음) |
+| `deploy/compose.yaml` | `app` 하나(이미지 `${IMAGE}:${IMAGE_TAG}`). 서버에 이미 있는 외부 네트워크 세 개에 붙는다: `proxy`(Traefik이 `workout-api.jjoon.cloud`를 받아 전달, 진입점 `websecure`, 인증서 `letsencrypt`), `postgresql`(DB 컨테이너 `postgres`, 접속은 `POSTGRES_HOST`(기본 `postgres`)·`POSTGRES_DB`·`POSTGRES_USER`·`POSTGRES_PASSWORD`), `seaweedfs`(S3 API, `STORAGE_S3_*`). 8080은 서버 localhost에만 열어 Verify에 쓴다 |
 | `deploy/base-image/Dockerfile` | 앱 컨테이너의 기반 이미지: Debian trixie + OpenJDK 21 JRE + FFmpeg 7.1(아이폰 HEIC 타일 사진을 읽는다. Ubuntu 기반 eclipse-temurin의 FFmpeg 6.1은 못 읽음). CI의 Base image 단계가 이 디렉터리가 바뀔 때 만들어 올린다. 보안 업데이트만 받으려면 Dockerfile을 고치거나(주석 포함) 레지스트리의 태그를 지워 다시 만들게 한다 |
 | `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호, 오브젝트 저장소 접속 정보). 실제 파일은 저장소에 넣지 않는다 |
 
@@ -588,7 +589,7 @@ Jenkins 준비:
 
 ## 부록 B. 설계 미결정 사항
 - **D-TODO-ARCH-001** ~~운영 PostgreSQL 버전 결정~~ **결정됨 (v0.6): PostgreSQL 18.** 배포 compose와 테스트(Testcontainers)를 모두 `postgres:18`로 고정했다.
-- **D-TODO-ARCH-002** 배포 환경 중 남은 것: DB와 오브젝트 저장소 파일의 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker compose exec db psql` 등). 서버 1대 compose 배포와 Traefik TLS 종료는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
+- **D-TODO-ARCH-002** 배포 환경 중 남은 것: DB와 오브젝트 저장소 파일의 백업과 암호화, 운영자 DB 접근 경로와 권한(DB 포트를 외부에 열지 않았으므로 서버 접속 후 `docker exec -it postgres psql -U workout -d workout` 등). 서버 1대 compose 배포와 Traefik TLS 종료는 결정됨(10.8). (영향: 2.4, 7.7, 9장)
 - **D-TODO-ARCH-003** ~~Access/Refresh Token 만료 시간~~ **결정됨 (v0.4):** 로그인 토큰 하나, 마지막 사용 후 30일 (auth BR-006, DEC-ARCH-011)
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
 - **D-TODO-ARCH-005** ~~DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문을 읽지 못하면~~ **결정됨 (v0.8, 운동 기록 구현 시 확인):** 부분 인덱스·`uuidv7()` 기본값은 읽는다. `CREATE FUNCTION`(PL/pgSQL)은 Pro 전용이라 `[jooq ignore]` 주석으로 제외하고 `parseIgnoreComments`를 켠다. `timestamptz`는 forcedType으로 `Instant`. 설정은 `build.gradle.kts`의 `jooq` 블록 (영향: DEC-ARCH-002)

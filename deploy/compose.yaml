@@ -1,5 +1,6 @@
 # Copied to the server by Jenkins. IMAGE/IMAGE_TAG come from release.env (written by Jenkins),
-# database settings from .env (created once on the server from .env.example).
+# database and storage settings from .env (created once on the server from .env.example).
+# The database and object storage are the PostgreSQL and SeaweedFS containers already running on the server.
 services:
   app:
     image: ${IMAGE}:${IMAGE_TAG}
@@ -8,8 +9,8 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     networks:
-      - default
       - proxy
+      - postgresql
       - seaweedfs
     labels:
       traefik.enable: "true"
@@ -19,41 +20,19 @@ services:
       traefik.http.routers.workout-api.tls.certresolver: letsencrypt
       traefik.http.services.workout-api.loadbalancer.server.port: "8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST:-postgres}:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      # Object storage: the SeaweedFS S3 API already running on the server, reached over its network.
       STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
       STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET}
       STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY}
       STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY}
-    depends_on:
-      db:
-        condition: service_healthy
-
-  db:
-    image: postgres:18
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      # PostgreSQL 18 images keep data under /var/lib/postgresql/18/docker; mount the parent.
-      - db-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-volumes:
-  db-data:
 
 networks:
-  # Shared with the Traefik container already running on the server.
+  # All three already exist on the server.
   proxy:
     external: true
-  # Shared with the SeaweedFS containers already running on the server.
+  postgresql:
+    external: true
   seaweedfs:
     external: true
