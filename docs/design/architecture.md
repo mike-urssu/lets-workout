@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.9
+- 문서 버전: v0.10
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -13,6 +13,7 @@
   - v0.7 — `users.id` 기본값을 직접 정의한 `uuid_v7()` 대신 PostgreSQL 18 내장 `uuidv7()`로 교체 (스키마 변경 V3)
   - v0.8 — 운영 사용 전이라 인증 스키마 변경 V1~V3을 V1 하나로 합침. D-TODO-ARCH-005 결정(PL/pgSQL은 `[jooq ignore]` 주석으로 코드 생성에서 제외). CI 에이전트 label·`DEPLOY_HOST` 전역 속성(10.8)
   - v0.9 (2026-10-09) — 오운완 사진·동영상을 위해 오브젝트 저장소(SeaweedFS, S3 API)와 서버의 미리보기 생성(FFmpeg)을 추가(DEC-ARCH-014 ~ 016). DB와 파일의 일관성 규칙(2.6), 커밋 후 작업(2.3), 파일 업로드·내려받기 규칙(5장), 503 응답(DEC-ARCH-017), 서비스가 미리 넣는 기준 데이터의 ID(DEC-ARCH-018) 추가. 1.4의 PostgreSQL 버전을 18로 바로잡음. 운동 기록 스키마 변경 V2·V3은 운영 사용 전이라 다시 만든다(workout-record 설계 6.5)
+  - v0.10 (2026-10-09) — 파일 내려받기의 범위 요청과 캐시 규칙(5장, 10.1), SeaweedFS 4의 S3 인증 설정(D-TODO-ARCH-007), FFmpeg는 9.x에서 확인(D-TODO-ARCH-008). v0.9는 코드에 반영됨
 
 ---
 
@@ -209,7 +210,7 @@
 | 사용자 시간대 | 사용자 현지 날짜가 필요한 요청은 `X-Time-Zone` 헤더(IANA 시간대 이름, 예: `Asia/Seoul`)로 받는다 (DEC-ARCH-007) |
 | 인증 | `Authorization: Bearer <로그인 토큰>` (7.1) |
 | 파일 업로드 | `multipart/form-data`, 파일 부분 이름 `file`, 한 요청에 파일 하나. 실제 형식은 내용으로 확인하고 요청의 형식 표시는 믿지 않는다. 서버 전체 상한은 10.1 |
-| 파일 내려받기 | 본문이 파일 자체, `Content-Type`은 저장된 형식. JSON으로 감싸지 않는다 |
+| 파일 내려받기 | 본문이 파일 자체, `Content-Type`은 저장된 형식. JSON으로 감싸지 않는다. `Range` 요청은 기능 설계가 지원한다고 정한 경우만 206으로 응답한다. 바뀌지 않는 파일은 `Cache-Control: private`로 캐시를 허용한다 |
 
 ---
 
@@ -457,7 +458,7 @@ API 요청: Authorization: Bearer <로그인 토큰>
 | 스키마 변경 스크립트 | Flyway, `src/main/resources/db/migration/V<번호>__<설명>.sql`. 애플리케이션 시작 시 적용, JPA `ddl-auto: validate` (DEC-ARCH-003). jOOQ 오픈소스 DDL 파서가 읽지 못하는 구문(PL/pgSQL 함수·트리거)은 `-- [jooq ignore start]` / `-- [jooq ignore stop]` 주석으로 감싼다 (D-TODO-ARCH-005) |
 | 공개 정적 파일 | `src/main/resources/static/` 아래 파일을 URL 루트 기준으로 제공. 보안 설정에서 해당 경로를 인증 없이 허용 |
 | 파일 업로드 (5장) | `MultipartFile`. 서버 전체 상한 `spring.servlet.multipart.max-file-size`·`max-request-size` = `110MB`(기능 상한 100MB보다 조금 크게 두어, 기능 상한 초과를 서비스가 정확한 에러 코드로 알리게 한다). 초과 시 `MaxUploadSizeExceededException` → 400 |
-| 파일 내려받기 (5장) | `ResponseEntity<StreamingResponseBody>` 또는 `InputStreamResource`, `Content-Type`·`Content-Length` 지정 |
+| 파일 내려받기 (5장) | `ResponseEntity<StreamingResponseBody>`로 S3 `GetObject` 스트림을 그대로 흘린다. `Content-Type`·`Content-Length` 지정. `Range` 헤더는 `HttpRange.parseRanges`로 해석해 `GetObject`의 `range`로 넘기고 206·`Content-Range`로 응답 |
 | 서비스가 미리 넣는 기준 데이터의 ID (DEC-ARCH-018) | 스키마 변경 스크립트의 `INSERT`에서 PostgreSQL 18 `uuidv7()` |
 | API 수준 통합 테스트 | MockMvc + Testcontainers PostgreSQL(`TestcontainersConfiguration`). 파일을 다루는 테스트는 SeaweedFS 컨테이너(`chrislusf/seaweedfs`, `server -s3`)를 함께 띄운다. 미디어 처리 테스트는 실행 환경에 FFmpeg가 있어야 한다(D-TODO-ARCH-008) |
 | 테스트 인증 | 테스트 픽스처가 `users`·`login_session` 행을 직접 넣고 그 토큰을 `Authorization` 헤더로 보낸다 |
@@ -590,8 +591,8 @@ Jenkins 준비:
 - **D-TODO-ARCH-004** 부하 테스트 도구와 환경. (영향: 9장, 각 기능의 성능 NFR 확인 방법)
 - **D-TODO-ARCH-005** ~~DDL 기반 jOOQ 코드 생성이 PostgreSQL 전용 구문을 읽지 못하면~~ **결정됨 (v0.8, 운동 기록 구현 시 확인):** 부분 인덱스·`uuidv7()` 기본값은 읽는다. `CREATE FUNCTION`(PL/pgSQL)은 Pro 전용이라 `[jooq ignore]` 주석으로 제외하고 `parseIgnoreComments`를 켠다. `timestamptz`는 forcedType으로 `Instant`. 설정은 `build.gradle.kts`의 `jooq` 블록 (영향: DEC-ARCH-002)
 - **D-TODO-ARCH-006** ~~UUIDv7 생성 수단 확정~~ **결정됨 (인증 구현 시 확인):** Spring Boot 4.1.1에 포함된 Hibernate 7.4.5의 `UuidGenerator.Style.VERSION_7`을 쓴다. 라이브러리 추가 없음 (10.1)
-- **D-TODO-ARCH-007** SeaweedFS 접속 정보: S3 API(`weed s3`)가 켜져 있는지, 앱 컨테이너에서 닿는 주소와 Docker 네트워크 이름, 버킷 이름, 접속 키. 정해지면 10.8의 compose와 `.env.example`에 넣는다. (영향: 2.4, 2.6, 10.7, 10.8)
-- **D-TODO-ARCH-008** FFmpeg를 넣은 기반 이미지: `eclipse-temurin:21-jre`에 배포판 FFmpeg를 설치한 `linux/arm64` 이미지를 만들어 GHCR에 올리는 방법(Jib은 패키지를 설치하지 못한다), 그 FFmpeg가 HEIC를 읽는지 확인(못 읽으면 libheif 추가), CI 에이전트에 테스트용 FFmpeg 설치. (영향: 1.4, 10.1, 10.8, workout-media)
+- **D-TODO-ARCH-007** SeaweedFS 접속 정보: S3 API(`weed s3`)가 켜져 있는지, 앱 컨테이너에서 닿는 주소와 Docker 네트워크 이름, 버킷 이름, 접속 키. SeaweedFS 4.x는 S3 인증 설정(`-s3.config`의 identities, 테스트는 `TestcontainersConfiguration` 참고)이 없으면 서명된 요청을 거절한다. 버킷은 미리 만들어 둔다. 정해지면 10.8의 compose와 `.env.example`에 넣는다. (영향: 2.4, 2.6, 10.7, 10.8)
+- **D-TODO-ARCH-008** FFmpeg를 넣은 기반 이미지: `eclipse-temurin:21-jre`에 배포판 FFmpeg를 설치한 `linux/arm64` 이미지를 만들어 GHCR에 올리는 방법(Jib은 패키지를 설치하지 못한다), 그 FFmpeg가 HEIC를 읽는지 확인(못 읽으면 libheif 추가), CI 에이전트에 테스트용 FFmpeg 설치. 개발 맥에는 Homebrew FFmpeg 9.0.2를 설치해 테스트를 통과했다(2026-10-09). (영향: 1.4, 10.1, 10.8, workout-media)
 
 ## 부록 C. 요구사항 피드백
 - ~~인증 요구사항 명세서가 없다~~ **해결 (v0.4):** `docs/requirements/auth.md` 작성됨.
