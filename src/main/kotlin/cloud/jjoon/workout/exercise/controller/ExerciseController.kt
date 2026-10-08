@@ -2,32 +2,31 @@ package cloud.jjoon.workout.exercise.controller
 
 import cloud.jjoon.workout.common.error.BusinessException
 import cloud.jjoon.workout.common.error.ErrorCode
+import cloud.jjoon.workout.exercise.repository.ExerciseCategoryRow
 import cloud.jjoon.workout.exercise.repository.ExerciseQueryRepository
 import cloud.jjoon.workout.exercise.repository.ExerciseRow
 import cloud.jjoon.workout.session.service.ExpiredSessionCleaner
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/exercises")
 class ExerciseController(
     private val exerciseQueryRepository: ExerciseQueryRepository,
     private val expiredSessionCleaner: ExpiredSessionCleaner,
 ) {
 
-    @GetMapping
-    fun search(@AuthenticationPrincipal userId: UUID, @RequestParam keyword: String?): List<ExerciseRow> {
-        expiredSessionCleaner.cleanUp(userId) // so the last performed dates include auto-completed sessions
-        val trimmed = keyword?.trim()?.ifEmpty { null }
-        if (trimmed != null && trimmed.length > MAX_KEYWORD_LENGTH) throw BusinessException(ErrorCode.VALIDATION_FAILED)
-        return exerciseQueryRepository.search(userId, trimmed)
-    }
+    /** API-EXERCISE-004: body parts for the home cards. */
+    @GetMapping("/api/v1/exercise-categories")
+    fun categories(): List<ExerciseCategoryRow> = exerciseQueryRepository.findCategories()
 
-    companion object {
-        private const val MAX_KEYWORD_LENGTH = 50
+    /** API-EXERCISE-001: one body part's exercises. */
+    @GetMapping("/api/v1/exercises")
+    fun exercises(@AuthenticationPrincipal userId: UUID, @RequestParam categoryId: UUID): List<ExerciseRow> {
+        expiredSessionCleaner.cleanUp(userId) // so the last performed dates include auto-completed sessions
+        if (!exerciseQueryRepository.categoryExists(categoryId)) throw BusinessException(ErrorCode.EXERCISE_CATEGORY_NOT_FOUND)
+        return exerciseQueryRepository.findByCategory(userId, categoryId)
     }
 }

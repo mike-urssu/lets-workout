@@ -6,7 +6,6 @@ CREATE TABLE workout_session
     performed_date date         NOT NULL,
     started_at     timestamptz  NOT NULL,
     ended_at       timestamptz,
-    memo           varchar(500),
     created_at     timestamptz  NOT NULL DEFAULT now(),
     updated_at     timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT ck_workout_session_status CHECK (status IN ('IN_PROGRESS', 'COMPLETED')),
@@ -29,6 +28,8 @@ CREATE TABLE workout_session_exercise
     created_at         timestamptz NOT NULL DEFAULT now()
 );
 
+-- REQ-EXERCISE-001: an exercise is added to a session once
+CREATE UNIQUE INDEX ux_workout_session_exercise_session_exercise ON workout_session_exercise (workout_session_id, exercise_id);
 CREATE INDEX idx_workout_session_exercise_session ON workout_session_exercise (workout_session_id, created_at, id);
 
 CREATE TABLE workout_set

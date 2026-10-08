@@ -21,6 +21,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      # Object storage (SeaweedFS S3 API) already running on the server. The app must also join the network it is
+      # reachable on (architecture D-TODO-ARCH-007).
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET}
+      STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY}
+      STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY}
     depends_on:
       db:
         condition: service_healthy

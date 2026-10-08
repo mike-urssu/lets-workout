@@ -2,11 +2,9 @@ package cloud.jjoon.workout.session.controller
 
 import cloud.jjoon.workout.common.error.BusinessException
 import cloud.jjoon.workout.common.error.ErrorCode
-import cloud.jjoon.workout.common.web.PageResponse
-import cloud.jjoon.workout.session.repository.WorkoutSessionListItem
 import cloud.jjoon.workout.session.service.ExpiredSessionCleaner
 import cloud.jjoon.workout.session.service.SessionExerciseResponse
-import cloud.jjoon.workout.session.service.WorkoutSessionDetailResponse
+import cloud.jjoon.workout.session.service.WorkoutSessionResponse
 import cloud.jjoon.workout.session.service.WorkoutSessionService
 import cloud.jjoon.workout.session.service.WorkoutSetResponse
 import jakarta.validation.Valid
@@ -28,7 +26,6 @@ import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.math.BigDecimal
@@ -50,7 +47,7 @@ class WorkoutSessionController(
     fun start(
         @AuthenticationPrincipal userId: UUID,
         @RequestHeader("X-Time-Zone") timeZone: String,
-    ): ResponseEntity<WorkoutSessionDetailResponse> {
+    ): ResponseEntity<WorkoutSessionResponse> {
         expiredSessionCleaner.cleanUp(userId)
         val zone = try {
             ZoneId.of(timeZone)
@@ -58,36 +55,21 @@ class WorkoutSessionController(
             throw BusinessException(ErrorCode.VALIDATION_FAILED)
         }
         val session = sessionService.start(userId, zone)
-        return ResponseEntity.created(URI.create("/api/v1/workout-sessions/${session.id}")).body(session)
+        return ResponseEntity.created(URI.create("/api/v1/workout-sessions/in-progress")).body(session)
     }
 
     @GetMapping("/in-progress")
-    fun inProgress(@AuthenticationPrincipal userId: UUID): ResponseEntity<WorkoutSessionDetailResponse> {
+    fun inProgress(@AuthenticationPrincipal userId: UUID): ResponseEntity<WorkoutSessionResponse> {
         expiredSessionCleaner.cleanUp(userId)
         return sessionService.getInProgress(userId)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.noContent().build()
     }
 
-    @GetMapping
-    fun list(
-        @AuthenticationPrincipal userId: UUID,
-        @RequestParam(defaultValue = "0") @Min(0) page: Int,
-        @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
-    ): PageResponse<WorkoutSessionListItem> {
-        expiredSessionCleaner.cleanUp(userId)
-        return sessionService.list(userId, page, size)
-    }
-
-    @GetMapping("/{sessionId}")
-    fun get(@AuthenticationPrincipal userId: UUID, @PathVariable sessionId: UUID): WorkoutSessionDetailResponse {
-        expiredSessionCleaner.cleanUp(userId)
-        return sessionService.get(userId, sessionId)
-    }
-
+    /** API-WORKOUT-006: cancels the in-progress session (REQ-WORKOUT-010). */
     @DeleteMapping("/{sessionId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun delete(@AuthenticationPrincipal userId: UUID, @PathVariable sessionId: UUID) {
+    fun cancel(@AuthenticationPrincipal userId: UUID, @PathVariable sessionId: UUID) {
         expiredSessionCleaner.cleanUp(userId)
-        sessionService.delete(userId, sessionId)
+        sessionService.cancel(userId, sessionId)
     }
 
     @PostMapping("/{sessionId}/complete")
@@ -95,20 +77,21 @@ class WorkoutSessionController(
         @AuthenticationPrincipal userId: UUID,
         @PathVariable sessionId: UUID,
         @Valid @RequestBody(required = false) request: CompleteWorkoutSessionRequest?,
-    ): WorkoutSessionDetailResponse {
+    ): WorkoutSessionResponse {
         expiredSessionCleaner.cleanUp(userId)
-        return sessionService.complete(userId, sessionId, request?.memo)
+        return sessionService.complete(userId, sessionId, request?.mediaIds.orEmpty())
     }
 
+    /** 201 when added, 200 when the exercise was already in the session (DEC-WORKOUT-018). */
     @PostMapping("/{sessionId}/exercises")
-    @ResponseStatus(HttpStatus.CREATED)
     fun addExercise(
         @AuthenticationPrincipal userId: UUID,
         @PathVariable sessionId: UUID,
         @Valid @RequestBody request: AddExerciseRequest,
-    ): SessionExerciseResponse {
+    ): ResponseEntity<SessionExerciseResponse> {
         expiredSessionCleaner.cleanUp(userId)
-        return sessionService.addExercise(userId, sessionId, request.exerciseId!!)
+        val added = sessionService.addExercise(userId, sessionId, request.exerciseId!!)
+        return ResponseEntity.status(if (added.created) HttpStatus.CREATED else HttpStatus.OK).body(added.exercise)
     }
 
     @DeleteMapping("/{sessionId}/exercises/{sessionExerciseId}")
@@ -161,7 +144,8 @@ class WorkoutSessionController(
     }
 }
 
-data class CompleteWorkoutSessionRequest(@field:Size(max = 500) val memo: String?)
+/** The photos and videos to attach, in display order (workout-media BR-003, BR-005). */
+data class CompleteWorkoutSessionRequest(@field:Size(max = 10) val mediaIds: List<UUID>?)
 
 data class AddExerciseRequest(@field:NotNull val exerciseId: UUID?)
 

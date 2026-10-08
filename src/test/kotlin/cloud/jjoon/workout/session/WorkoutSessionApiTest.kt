@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.put
 import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -46,7 +47,6 @@ class WorkoutSessionApiTest {
     @BeforeEach
     fun setUp() {
         operator.deleteAllAccounts()
-        operator.deleteAllExercises()
         clock.reset()
         me = users.signIn("joonhee.song")
     }
@@ -59,8 +59,8 @@ class WorkoutSessionApiTest {
             jsonPath("$.performedDate") { value("2026-10-05") }
             jsonPath("$.startedAt") { value("2026-10-05T09:00:00Z") }
             jsonPath("$.endedAt") { value(null) }
-            jsonPath("$.memo") { value(null) }
             jsonPath("$.exercises") { isEmpty() }
+            jsonPath("$.categories") { isEmpty() }
             jsonPath("$.summary.durationSeconds") { value(null) }
             jsonPath("$.summary.totalSets") { value(0) }
         }.andReturn().let { objectMapper.readTree(it.response.contentAsString).get("id").asString() }
@@ -134,13 +134,13 @@ class WorkoutSessionApiTest {
             mockMvc.post("/api/v1/workout-sessions") { header("X-Time-Zone", "Asia/Seoul") },
             mockMvc.get("/api/v1/workout-sessions/in-progress"),
             mockMvc.get("/api/v1/exercises"),
+            mockMvc.get("/api/v1/exercise-categories"),
         ).forEach { it.andExpect { status { isUnauthorized() }; jsonPath("$.code") { value("UNAUTHORIZED") } } }
     }
 
     @Test
-    fun `REQ-EXERCISE-001 세션에 추가한 운동은 추가한 순서로 상세에 나온다`() {
-        val squat = operator.addExercise("스쿼트", "하체")
-        val bench = operator.addExercise("벤치프레스", "가슴", "/images/exercises/bench-press.png")
+    fun `REQ-EXERCISE-001 세션에 추가한 운동은 추가한 순서로 현황에 나온다`() {
+        val squat = operator.exerciseId("스쿼트")
         val session = startedSessionId()
 
         addExercise(session, squat).andExpect {
@@ -148,21 +148,33 @@ class WorkoutSessionApiTest {
             jsonPath("$.sessionExerciseId") { isString() }
             jsonPath("$.exerciseId") { value(squat.toString()) }
             jsonPath("$.name") { value("스쿼트") }
+            jsonPath("$.nameEn") { value("Squat") }
+            jsonPath("$.target") { value("대퇴사두 타겟") }
+            jsonPath("$.category.name") { value("하체") }
             jsonPath("$.sets") { isEmpty() }
-            jsonPath("$.totalSets") { value(0) }
+            jsonPath("$.setCount") { value(0) }
+            jsonPath("$.firstSetAt") { value(null) }
         }
         clock.advance(Duration.ofMinutes(1))
-        addExercise(session, bench)
-        clock.advance(Duration.ofMinutes(1))
-        addExercise(session, squat) // the same exercise may be added again (appendix C-3)
+        addExercise(session, operator.exerciseId("벤치프레스"))
 
-        detail(session).andExpect {
+        inProgress().andExpect {
             status { isOk() }
-            jsonPath("$.id") { value(session) }
-            jsonPath("$.exercises[*].name") { value(contains("스쿼트", "벤치프레스", "스쿼트")) }
-            jsonPath("$.exercises[1].category") { value("가슴") }
-            jsonPath("$.exercises[1].imageUrl") { value("/images/exercises/bench-press.png") }
+            jsonPath("$.exercises[*].name") { value(contains("스쿼트", "벤치프레스")) }
+            jsonPath("$.exercises[1].category.name") { value("가슴") }
         }
+    }
+
+    @Test
+    fun `REQ-EXERCISE-001 이미 세션에 있는 운동을 다시 고르면 새로 추가하지 않고 그 운동을 돌려준다`() {
+        val session = startedSessionId()
+        val first = sessionExerciseId(session, operator.exerciseId("스쿼트"))
+
+        addExercise(session, operator.exerciseId("스쿼트")).andExpect {
+            status { isOk() }
+            jsonPath("$.sessionExerciseId") { value(first) }
+        }
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM workout_session_exercise", Int::class.java))
     }
 
     @Test
@@ -187,40 +199,39 @@ class WorkoutSessionApiTest {
 
     @Test
     fun `ERR-009 없는 세션은 찾을 수 없다`() {
-        val exercise = operator.addExercise("스쿼트", "하체")
         val missing = UUID.randomUUID().toString()
 
-        detail(missing).andExpect {
+        addExercise(missing, operator.exerciseId("스쿼트")).andExpect {
             status { isNotFound() }
             jsonPath("$.code") { value("WORKOUT_SESSION_NOT_FOUND") }
         }
-        addExercise(missing, exercise).andExpect { jsonPath("$.code") { value("WORKOUT_SESSION_NOT_FOUND") } }
+        cancel(missing).andExpect { jsonPath("$.code") { value("WORKOUT_SESSION_NOT_FOUND") } }
     }
 
     @Test
-    fun `ERR-003 다른 사용자의 세션은 조회하거나 바꿀 수 없다`() {
-        val exercise = operator.addExercise("스쿼트", "하체")
+    fun `ERR-003 다른 사용자의 세션은 바꾸거나 취소할 수 없다`() {
         val othersSession = startedSessionId(users.signIn("other.user"))
 
-        detail(othersSession).andExpect {
+        addExercise(othersSession, operator.exerciseId("스쿼트")).andExpect {
             status { isForbidden() }
             jsonPath("$.code") { value("FORBIDDEN") }
         }
-        addExercise(othersSession, exercise).andExpect { status { isForbidden() } }
+        cancel(othersSession).andExpect { status { isForbidden() } }
+        complete(othersSession).andExpect { status { isForbidden() } }
     }
 
     @Test
     fun `ERR-010 세션 ID가 UUID 형식이 아니면 입력값 오류다`() {
-        detail("not-a-uuid").andExpect {
+        cancel("not-a-uuid").andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("VALIDATION_FAILED") }
         }
     }
 
     @Test
-    fun `REQ-SET-001 세트를 추가하면 운동마다 1번부터 번호가 붙고 상세 요약에 반영된다`() {
+    fun `REQ-SET-001 세트를 추가하면 운동마다 1번부터 번호가 붙고 현황에 반영된다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
 
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""").andExpect {
             status { isCreated() }
@@ -228,23 +239,28 @@ class WorkoutSessionApiTest {
             jsonPath("$.setNumber") { value(1) }
             jsonPath("$.weight") { value(60.0) }
             jsonPath("$.repetitions") { value(10) }
+            jsonPath("$.createdAt") { value("2026-10-05T09:00:00Z") }
         }
+        clock.advance(Duration.ofMinutes(3))
         addSet(session, bench, """{"weight": 62.5, "repetitions": 8}""").andExpect { jsonPath("$.setNumber") { value(2) } }
 
-        detail(session).andExpect {
+        inProgress().andExpect {
             jsonPath("$.exercises[0].sets[*].setNumber") { value(contains(1, 2)) }
             jsonPath("$.exercises[0].sets[1].weight") { value(62.5) }
-            jsonPath("$.exercises[0].totalSets") { value(2) }
+            jsonPath("$.exercises[0].sets[1].createdAt") { value("2026-10-05T09:03:00Z") }
+            jsonPath("$.exercises[0].setCount") { value(2) }
             jsonPath("$.exercises[0].totalRepetitions") { value(18) }
+            jsonPath("$.exercises[0].volume") { value(1100.0) }
+            jsonPath("$.exercises[0].firstSetAt") { value("2026-10-05T09:00:00Z") }
             jsonPath("$.summary.totalSets") { value(2) }
-            jsonPath("$.summary.totalWeight") { value(1100.0) }
+            jsonPath("$.summary.totalVolume") { value(1100.0) }
         }
     }
 
     @Test
     fun `BR-003 BR-005 경계값 안의 중량과 반복 횟수는 기록할 수 있다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
 
         addSet(session, bench, """{"weight": 0, "repetitions": 1}""").andExpect { status { isCreated() } }
         addSet(session, bench, """{"weight": 1000, "repetitions": 1000}""").andExpect { status { isCreated() } }
@@ -254,7 +270,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `ERR-005 ERR-010 범위를 벗어나거나 형식이 틀리거나 빠진 세트 값은 입력값 오류다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
 
         listOf(
             """{"weight": -0.01, "repetitions": 10}""",
@@ -271,13 +287,13 @@ class WorkoutSessionApiTest {
                 jsonPath("$.code") { value("VALIDATION_FAILED") }
             }
         }
-        detail(session).andExpect { jsonPath("$.summary.totalSets") { value(0) } }
+        inProgress().andExpect { jsonPath("$.summary.totalSets") { value(0) } }
     }
 
     @Test
     fun `REQ-SET-002 세트를 고쳐도 세트 번호는 그대로다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         val second = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))
 
@@ -288,20 +304,20 @@ class WorkoutSessionApiTest {
             jsonPath("$.weight") { value(70.25) }
             jsonPath("$.repetitions") { value(5) }
         }
-        detail(session).andExpect { jsonPath("$.exercises[0].sets[1].weight") { value(70.25) } }
+        inProgress().andExpect { jsonPath("$.exercises[0].sets[1].weight") { value(70.25) } }
     }
 
     @Test
     fun `BR-007 세트를 지우면 남은 세트가 빈 번호 없이 다시 번호를 가진다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         val first = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))
         val second = idOf(addSet(session, bench, """{"weight": 62.5, "repetitions": 8}"""))
         val third = idOf(addSet(session, bench, """{"weight": 65, "repetitions": 6}"""))
 
         deleteSet(session, bench, second).andExpect { status { isNoContent() } }
 
-        detail(session).andExpect {
+        inProgress().andExpect {
             jsonPath("$.exercises[0].sets[*].id") { value(contains(first, third)) }
             jsonPath("$.exercises[0].sets[*].setNumber") { value(contains(1, 2)) }
         }
@@ -310,8 +326,8 @@ class WorkoutSessionApiTest {
     @Test
     fun `ERR-009 세션에 없는 운동이나 그 운동에 없는 세트는 찾을 수 없다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
-        val squat = sessionExerciseId(session, operator.addExercise("스쿼트", "하체"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트"))
         val benchSet = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))
         val unknown = UUID.randomUUID().toString()
 
@@ -330,7 +346,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `NFR-SEC-002 다른 사용자의 운동과 세트 ID를 내 세션 경로에 넣어도 접근할 수 없다`() {
         val other = users.signIn("other.user")
-        val exercise = operator.addExercise("벤치프레스", "가슴")
+        val exercise = operator.exerciseId("벤치프레스")
         val othersSession = startedSessionId(other)
         val othersBench = sessionExerciseId(othersSession, exercise, other)
         val othersSet = idOf(addSet(othersSession, othersBench, """{"weight": 60, "repetitions": 10}""", other))
@@ -343,7 +359,7 @@ class WorkoutSessionApiTest {
         removeExercise(mySession, othersBench).andExpect { status { isNotFound() } }
         addSet(othersSession, othersBench, """{"weight": 1, "repetitions": 1}""").andExpect { status { isForbidden() } }
 
-        detail(othersSession, other).andExpect {
+        inProgress(other).andExpect {
             jsonPath("$.exercises[0].sets[*].weight") { value(contains(60.0)) }
         }
     }
@@ -351,12 +367,12 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-EXERCISE-002 세션에서 운동을 지우면 그 운동의 세트도 함께 지워진다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
 
         removeExercise(session, bench).andExpect { status { isNoContent() } }
 
-        detail(session).andExpect {
+        inProgress().andExpect {
             jsonPath("$.exercises") { isEmpty() }
             jsonPath("$.summary.totalSets") { value(0) }
         }
@@ -364,44 +380,73 @@ class WorkoutSessionApiTest {
     }
 
     @Test
-    fun `REQ-WORKOUT-002 세트가 있는 세션을 완료하면 메모와 요약이 담긴 기록이 된다`() {
+    fun `REQ-WORKOUT-009 BR-015 현황은 세트가 있는 운동을 부위 순서로 묶어 부위별 볼륨과 세트 수를 준다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트"))          // no sets
+        clock.advance(Duration.ofMinutes(1))
+        val row = sessionExerciseId(session, operator.exerciseId("랫풀다운"))
+        clock.advance(Duration.ofMinutes(1))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        clock.advance(Duration.ofMinutes(1))
+        val incline = sessionExerciseId(session, operator.exerciseId("인클라인 벤치프레스"))
+        addSet(session, row, """{"weight": 50, "repetitions": 12}""")
+        addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
+        addSet(session, bench, """{"weight": 70, "repetitions": 8}""")
+        addSet(session, incline, """{"weight": 40, "repetitions": 10}""")
+
+        inProgress().andExpect {
+            jsonPath("$.exercises[*].sessionExerciseId") { value(contains(squat, row, bench, incline)) }
+            jsonPath("$.categories[*].name") { value(contains("가슴", "등")) }
+            jsonPath("$.categories[0].sessionExerciseIds") { value(contains(bench, incline)) }
+            jsonPath("$.categories[0].setCount") { value(3) }
+            jsonPath("$.categories[0].volume") { value(1560.0) } // 600 + 560 + 400
+            jsonPath("$.categories[1].volume") { value(600.0) }
+            jsonPath("$.summary.exerciseCount") { value(3) }
+            jsonPath("$.summary.totalVolume") { value(2160.0) }
+        }
+    }
+
+    @Test
+    fun `REQ-WORKOUT-002 세트가 있는 세션을 완료하면 요약이 담긴 기록이 되고 새로 시작할 수 있다`() {
+        val session = startedSessionId()
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         clock.advance(Duration.ofMinutes(65))
 
-        complete(session, """{"memo": "하체 위주"}""").andExpect {
+        complete(session).andExpect {
             status { isOk() }
             jsonPath("$.status") { value("COMPLETED") }
             jsonPath("$.endedAt") { value("2026-10-05T10:05:00Z") }
-            jsonPath("$.memo") { value("하체 위주") }
             jsonPath("$.summary.durationSeconds") { value(3900) }
             jsonPath("$.summary.exerciseCount") { value(1) }
-            jsonPath("$.summary.totalWeight") { value(600.0) }
+            jsonPath("$.summary.totalVolume") { value(600.0) }
+            jsonPath("$.categories[0].name") { value("가슴") }
         }
         inProgress().andExpect { status { isNoContent() } }
         start().andExpect { status { isCreated() } }
     }
 
     @Test
-    fun `REQ-WORKOUT-002 메모 없이 완료할 수 있고 메모는 500자까지다`() {
+    fun `workout-media BR-005 완료할 때 고른 사진·동영상이 10개를 넘거나 이 세션의 것이 아니면 입력값 오류다`() {
         val session = startedSessionId()
-        addSet(session, sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴")), """{"weight": 60, "repetitions": 10}""")
+        addSet(session, sessionExerciseId(session, operator.exerciseId("벤치프레스")), """{"weight": 60, "repetitions": 10}""")
+        val eleven = (1..11).joinToString(",") { "\"${UUID.randomUUID()}\"" }
 
-        complete(session, """{"memo": "${"가".repeat(501)}"}""").andExpect {
+        complete(session, """{"mediaIds": [$eleven]}""").andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("VALIDATION_FAILED") }
         }
-        complete(session, body = null).andExpect {
-            status { isOk() }
-            jsonPath("$.memo") { value(null) }
+        complete(session, """{"mediaIds": ["${UUID.randomUUID()}"]}""").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("VALIDATION_FAILED") }
         }
+        complete(session, """{"mediaIds": []}""").andExpect { status { isOk() } }
     }
 
     @Test
     fun `BR-012 세트가 하나도 없으면 완료할 수 없다`() {
         val session = startedSessionId()
-        sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        sessionExerciseId(session, operator.exerciseId("벤치프레스"))
 
         complete(session).andExpect {
             status { isConflict() }
@@ -426,7 +471,7 @@ class WorkoutSessionApiTest {
         val body = """{"weight": 1, "repetitions": 1}"""
 
         listOf(
-            addExercise(session.id, operator.addExercise("스쿼트", "하체")),
+            addExercise(session.id, operator.exerciseId("스쿼트")),
             removeExercise(session.id, session.sessionExerciseId),
             addSet(session.id, session.sessionExerciseId, body),
             updateSet(session.id, session.sessionExerciseId, session.setId, body),
@@ -442,7 +487,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-012 완료와 세트 추가가 동시에 와도 완료된 세션에 세트가 생기지 않는다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         val pool = Executors.newFixedThreadPool(9)
         val ready = CountDownLatch(1)
@@ -462,140 +507,73 @@ class WorkoutSessionApiTest {
         pool.shutdown()
 
         assertEquals(emptyList(), addStatuses.filter { it != 201 && it != 409 })
-        detail(session).andExpect { jsonPath("$.summary.totalSets") { value(completedSets) } }
+        assertEquals(completedSets, jdbc.queryForObject("SELECT count(*) FROM workout_set", Int::class.java))
         assertEquals(1 + addStatuses.count { it == 201 }, completedSets)
     }
 
     @Test
-    fun `REQ-WORKOUT-003 기록 목록은 최근 수행일 순이고 같은 날은 늦게 시작한 것이 먼저다`() {
-        val bench = operator.addExercise("벤치프레스", "가슴")
-        val squat = operator.addExercise("스쿼트", "하체")
-        val first = startedSessionId()                       // 2026-10-05 18:00 Seoul
-        val firstBench = sessionExerciseId(first, bench)
-        clock.advance(Duration.ofMinutes(1))
-        sessionExerciseId(first, squat)
-        clock.advance(Duration.ofMinutes(1))
-        sessionExerciseId(first, bench)
-        addSet(first, firstBench, """{"weight": 60, "repetitions": 10}""")
-        addSet(first, firstBench, """{"weight": 60, "repetitions": 10}""")
-        clock.advance(Duration.ofMinutes(60))
-        complete(first)
-        clock.advance(Duration.ofHours(1))
-        val second = startedSessionId()                      // same day, later
-        addSet(second, sessionExerciseId(second, squat), """{"weight": 100, "repetitions": 5}""")
-        complete(second)
-        clock.advance(Duration.ofDays(1))
-        val third = startedSessionId()                       // next day, still in progress
-        startedSessionId(users.signIn("other.user"))
+    fun `REQ-WORKOUT-010 진행 중인 운동을 취소하면 운동과 세트가 함께 지워지고 다시 시작할 수 있다`() {
+        val session = startedSessionId()
+        addSet(session, sessionExerciseId(session, operator.exerciseId("벤치프레스")), """{"weight": 60, "repetitions": 10}""")
 
-        history().andExpect {
-            status { isOk() }
-            jsonPath("$.content[*].id") { value(contains(third, second, first)) }
-            jsonPath("$.content[0].status") { value("IN_PROGRESS") }
-            jsonPath("$.content[0].performedDate") { value("2026-10-06") }
-            jsonPath("$.content[0].durationSeconds") { value(null) }
-            jsonPath("$.content[0].exerciseNames") { isEmpty() }
-            jsonPath("$.content[0].totalSets") { value(0) }
-            jsonPath("$.content[2].exerciseNames") { value(contains("벤치프레스", "스쿼트")) }
-            jsonPath("$.content[2].totalSets") { value(2) }
-            jsonPath("$.content[2].startedAt") { value("2026-10-05T09:00:00Z") }
-            jsonPath("$.content[2].endedAt") { value("2026-10-05T10:02:00Z") }
-            jsonPath("$.content[2].durationSeconds") { value(3720) }
-            jsonPath("$.totalElements") { value(3) }
-            jsonPath("$.totalPages") { value(1) }
-            jsonPath("$.page") { value(0) }
-            jsonPath("$.size") { value(20) }
-        }
-    }
+        cancel(session).andExpect { status { isNoContent() } }
 
-    @Test
-    fun `REQ-WORKOUT-003 기록 목록은 페이지 단위로 나눠 조회한다`() {
-        val bench = operator.addExercise("벤치프레스", "가슴")
-        val sessions = (1..3).map {
-            val session = completedSession(bench).id
-            clock.advance(Duration.ofDays(1))
-            session
-        }
-
-        history("page=1&size=2").andExpect {
-            jsonPath("$.content[*].id") { value(contains(sessions[0])) }
-            jsonPath("$.page") { value(1) }
-            jsonPath("$.size") { value(2) }
-            jsonPath("$.totalElements") { value(3) }
-            jsonPath("$.totalPages") { value(2) }
-        }
-    }
-
-    @Test
-    fun `REQ-WORKOUT-003 기록이 없으면 빈 목록이다`() {
-        history().andExpect {
-            status { isOk() }
-            jsonPath("$.content") { isEmpty() }
-            jsonPath("$.totalElements") { value(0) }
-        }
-    }
-
-    @Test
-    fun `ERR-010 페이지 번호나 크기가 범위를 벗어나면 입력값 오류다`() {
-        listOf("page=-1", "size=0", "size=101").forEach {
-            history(it).andExpect {
-                status { isBadRequest() }
-                jsonPath("$.code") { value("VALIDATION_FAILED") }
-            }
-        }
-    }
-
-    @Test
-    fun `REQ-WORKOUT-005 기록을 지우면 운동과 세트도 함께 지워지고 다시 지울 수 없다`() {
-        val session = completedSession()
-
-        deleteSession(session.id).andExpect { status { isNoContent() } }
-
-        detail(session.id).andExpect { jsonPath("$.code") { value("WORKOUT_SESSION_NOT_FOUND") } }
-        deleteSession(session.id).andExpect {
+        inProgress().andExpect { status { isNoContent() } }
+        cancel(session).andExpect {
             status { isNotFound() }
             jsonPath("$.code") { value("WORKOUT_SESSION_NOT_FOUND") }
         }
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workout_session_exercise", Int::class.java))
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workout_set", Int::class.java))
+        start().andExpect { status { isCreated() } }
     }
 
     @Test
-    fun `REQ-WORKOUT-005 진행 중인 세션도 지울 수 있지만 다른 사용자의 기록은 지울 수 없다`() {
-        deleteSession(startedSessionId()).andExpect { status { isNoContent() } }
-        inProgress().andExpect { status { isNoContent() } }
+    fun `ERR-008 완료된 운동은 취소할 수 없다`() {
+        val session = completedSession()
 
-        val othersSession = startedSessionId(users.signIn("other.user"))
-        deleteSession(othersSession).andExpect {
-            status { isForbidden() }
-            jsonPath("$.code") { value("FORBIDDEN") }
+        cancel(session.id).andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value("WORKOUT_SESSION_ALREADY_COMPLETED") }
         }
+        assertEquals("COMPLETED", statusOf(session.id))
+    }
+
+    @Test
+    fun `BR-012 ERR-012 세트 없는 진행 중 운동도 취소할 수 있다`() {
+        val session = startedSessionId()
+        sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        complete(session).andExpect { jsonPath("$.code") { value("WORKOUT_SESSION_HAS_NO_SETS") } }
+
+        cancel(session).andExpect { status { isNoContent() } }
     }
 
     @Test
     fun `BR-013 시작 후 6시간이 지난 세션은 마지막 세트 시각에 완료되고 새로 시작할 수 있다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         clock.advance(Duration.ofMinutes(40))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")  // 09:40
         clock.advance(Duration.ofHours(5).plusMinutes(21))                // 15:01
 
         inProgress().andExpect { status { isNoContent() } }
-        detail(session).andExpect {
-            jsonPath("$.status") { value("COMPLETED") }
-            jsonPath("$.endedAt") { value("2026-10-05T09:40:00Z") }
-        }
+        assertEquals("COMPLETED", statusOf(session))
+        assertEquals(
+            Instant.parse("2026-10-05T09:40:00Z"),
+            jdbc.queryForObject("SELECT ended_at FROM workout_session WHERE id = ?", Instant::class.java, UUID.fromString(session)),
+        )
         start().andExpect { status { isCreated() } }
     }
 
     @Test
     fun `BR-013 시작 후 6시간이 지난 세트 없는 세션은 지워진다`() {
         val session = startedSessionId()
-        sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         clock.advance(Duration.ofHours(6).plusSeconds(1))
 
-        detail(session).andExpect { jsonPath("$.code") { value("WORKOUT_SESSION_NOT_FOUND") } }
+        inProgress().andExpect { status { isNoContent() } }
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workout_session", Int::class.java))
     }
 
     @Test
@@ -609,7 +587,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-013 BR-002 6시간이 지난 세션에 세트를 추가하면 완료된 세션이라 바꿀 수 없다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.addExercise("벤치프레스", "가슴"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         clock.advance(Duration.ofHours(7))
 
@@ -617,21 +595,20 @@ class WorkoutSessionApiTest {
             status { isConflict() }
             jsonPath("$.code") { value("WORKOUT_SESSION_NOT_EDITABLE") }
         }
-        detail(session).andExpect {
-            jsonPath("$.status") { value("COMPLETED") }
-            jsonPath("$.summary.totalSets") { value(1) }
-        }
+        cancel(session).andExpect { jsonPath("$.code") { value("WORKOUT_SESSION_ALREADY_COMPLETED") } }
+        assertEquals("COMPLETED", statusOf(session))
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM workout_set", Int::class.java))
     }
 
-    private fun history(query: String = "") =
-        mockMvc.get("/api/v1/workout-sessions?$query") { header("Authorization", "Bearer ${me.token}") }
-
-    private fun deleteSession(sessionId: String) =
+    private fun cancel(sessionId: String) =
         mockMvc.delete("/api/v1/workout-sessions/$sessionId") { header("Authorization", "Bearer ${me.token}") }
+
+    private fun statusOf(sessionId: String): String =
+        jdbc.queryForObject("SELECT status FROM workout_session WHERE id = ?", String::class.java, UUID.fromString(sessionId))!!
 
     private data class CompletedSession(val id: String, val sessionExerciseId: String, val setId: String)
 
-    private fun completedSession(exerciseId: UUID = operator.addExercise("벤치프레스", "가슴")): CompletedSession {
+    private fun completedSession(exerciseId: UUID = operator.exerciseId("벤치프레스")): CompletedSession {
         val session = startedSessionId()
         val bench = sessionExerciseId(session, exerciseId)
         val set = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))
@@ -682,9 +659,6 @@ class WorkoutSessionApiTest {
     private fun startedSessionId(user: SignedInUser = me): String =
         start(user = user).andExpect { status { isCreated() } }
             .andReturn().let { objectMapper.readTree(it.response.contentAsString).get("id").asString() }
-
-    private fun detail(sessionId: String, user: SignedInUser = me): ResultActionsDsl =
-        mockMvc.get("/api/v1/workout-sessions/$sessionId") { header("Authorization", "Bearer ${user.token}") }
 
     private fun addExercise(sessionId: String, exerciseId: UUID, user: SignedInUser = me): ResultActionsDsl =
         mockMvc.post("/api/v1/workout-sessions/$sessionId/exercises") {

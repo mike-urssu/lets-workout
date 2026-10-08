@@ -39,87 +39,92 @@ class ExerciseApiTest {
     @BeforeEach
     fun setUp() {
         operator.deleteAllAccounts()
-        operator.deleteAllExercises()
         clock.reset()
         me = users.signIn("joonhee.song")
     }
 
     @Test
-    fun `REQ-EXERCISE-001 운동 목록은 카테고리, 운동명 순이고 해본 적 없는 운동의 최근 수행일은 없다`() {
-        operator.addExercise("스쿼트", "하체")
-        operator.addExercise("벤치프레스", "가슴", "/images/exercises/bench-press.png")
-        operator.addExercise("덤벨프레스", "가슴")
-
-        exercises().andExpect {
+    fun `IF-EXERCISE-003 부위 목록은 화면 순서이고 부위마다 이미지와 종목 수가 있다`() {
+        mockMvc.get("/api/v1/exercise-categories") { header("Authorization", "Bearer ${me.token}") }.andExpect {
             status { isOk() }
-            jsonPath("$[*].name") { value(contains("덤벨프레스", "벤치프레스", "스쿼트")) }
-            jsonPath("$[1].category") { value("가슴") }
-            jsonPath("$[1].imageUrl") { value("/images/exercises/bench-press.png") }
-            jsonPath("$[0].imageUrl") { value(null) }
-            jsonPath("$[0].lastPerformedDate") { value(null) }
+            jsonPath("$[*].name") { value(contains("가슴", "등", "어깨", "하체")) }
+            jsonPath("$[*].exerciseCount") { value(contains(5, 6, 5, 8)) }
+            jsonPath("$[0].imageUrl") { value("/images/exercise-categories/chest.jpg") }
             jsonPath("$[0].id") { isString() }
         }
     }
 
     @Test
-    fun `REQ-EXERCISE-001 운동명 일부로 대소문자 구분 없이 검색한다`() {
-        operator.addExercise("Bench Press", "가슴")
-        operator.addExercise("벤치 딥스", "가슴")
-        operator.addExercise("Squat", "하체")
+    fun `DEC-WORKOUT-008 부위 이미지는 로그인 없이 받을 수 있다`() {
+        listOf("chest", "back", "shoulders", "legs").forEach { name ->
+            mockMvc.get("/images/exercise-categories/$name.jpg").andExpect {
+                status { isOk() }
+                content { contentType(MediaType.IMAGE_JPEG) }
+            }
+        }
+    }
 
-        exercises("  bench ").andExpect {
+    @Test
+    fun `REQ-EXERCISE-001 부위의 운동 목록은 초기 목록 순서이고 해본 적 없는 운동의 최근 수행일은 없다`() {
+        exercises(operator.categoryId("가슴")).andExpect {
             status { isOk() }
-            jsonPath("$[*].name") { value(contains("Bench Press")) }
+            jsonPath("$[*].name") {
+                value(contains("벤치프레스", "스미스 벤치프레스", "인클라인 벤치프레스", "스미스 인클라인 벤치프레스", "펙덱 플라이"))
+            }
+            jsonPath("$[0].nameEn") { value("Bench Press") }
+            jsonPath("$[0].target") { value("가슴 중부 타겟") }
+            jsonPath("$[0].lastPerformedDate") { value(null) }
+        }
+        exercises(operator.categoryId("하체")).andExpect {
+            jsonPath("$[*].name") {
+                value(contains("스쿼트", "레그 프레스", "레그 익스텐션", "레그 컬", "런지", "힙 어덕션", "힙 어브덕션", "힙 쓰러스트"))
+            }
         }
     }
 
     @Test
-    fun `REQ-EXERCISE-001 검색어의 와일드카드 문자는 일반 문자로 찾는다`() {
-        operator.addExercise("100% 스쿼트", "하체")
-        operator.addExercise("스쿼트", "하체")
-
-        exercises("%").andExpect {
-            jsonPath("$[*].name") { value(contains("100% 스쿼트")) }
-        }
-    }
-
-    @Test
-    fun `ERR-010 검색어가 50자를 넘으면 입력값 오류다`() {
-        exercises("가".repeat(50)).andExpect { status { isOk() } }
-        exercises("가".repeat(51)).andExpect {
+    fun `ERR-010 부위를 주지 않거나 형식이 틀리면 입력값 오류다`() {
+        mockMvc.get("/api/v1/exercises") { header("Authorization", "Bearer ${me.token}") }.andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("VALIDATION_FAILED") }
+        }
+        mockMvc.get("/api/v1/exercises?categoryId=chest") { header("Authorization", "Bearer ${me.token}") }.andExpect {
+            status { isBadRequest() }
+        }
+    }
+
+    @Test
+    fun `ERR-009 없는 부위는 찾을 수 없다`() {
+        exercises(UUID.randomUUID()).andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("EXERCISE_CATEGORY_NOT_FOUND") }
         }
     }
 
     @Test
     fun `DEC-WORKOUT-012 최근 수행일은 내가 완료한 세션 중 가장 늦은 수행 날짜다`() {
-        val bench = operator.addExercise("벤치프레스", "가슴")
-        val squat = operator.addExercise("스쿼트", "하체")
-        val deadlift = operator.addExercise("데드리프트", "등")
-        workout(me, bench, complete = true)
+        workout(me, "벤치프레스", complete = true)
         clock.advance(Duration.ofDays(1))
-        workout(me, bench, complete = true)
-        workout(users.signIn("other.user"), deadlift, complete = true)
-        workout(me, squat, complete = false)
+        workout(me, "벤치프레스", complete = true)
+        workout(users.signIn("other.user"), "인클라인 벤치프레스", complete = true)
+        workout(me, "펙덱 플라이", complete = false)
 
-        exercises().andExpect {
+        exercises(operator.categoryId("가슴")).andExpect {
             jsonPath("$[?(@.name == '벤치프레스')].lastPerformedDate") { value(contains("2026-10-06")) }
-            jsonPath("$[?(@.name == '스쿼트')].lastPerformedDate") { value(contains(nullValue())) }
-            jsonPath("$[?(@.name == '데드리프트')].lastPerformedDate") { value(contains(nullValue())) }
+            jsonPath("$[?(@.name == '인클라인 벤치프레스')].lastPerformedDate") { value(contains(nullValue())) }
+            jsonPath("$[?(@.name == '펙덱 플라이')].lastPerformedDate") { value(contains(nullValue())) }
         }
     }
 
     @Test
     fun `BR-013 6시간이 지나 자동 완료된 세션도 최근 수행일에 반영된다`() {
-        val bench = operator.addExercise("벤치프레스", "가슴")
-        workout(me, bench, complete = false)
+        workout(me, "벤치프레스", complete = false)
         clock.advance(Duration.ofHours(7))
 
-        exercises().andExpect { jsonPath("$[0].lastPerformedDate") { value("2026-10-05") } }
+        exercises(operator.categoryId("가슴")).andExpect { jsonPath("$[0].lastPerformedDate") { value("2026-10-05") } }
     }
 
-    private fun workout(user: SignedInUser, exerciseId: UUID, complete: Boolean) {
+    private fun workout(user: SignedInUser, exercise: String, complete: Boolean) {
         val auth = "Bearer ${user.token}"
         val session = idOf(mockMvc.post("/api/v1/workout-sessions") {
             header("Authorization", auth)
@@ -128,7 +133,7 @@ class ExerciseApiTest {
         val sessionExercise = idOf(mockMvc.post("/api/v1/workout-sessions/$session/exercises") {
             header("Authorization", auth)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"exerciseId": "$exerciseId"}"""
+            content = """{"exerciseId": "${operator.exerciseId(exercise)}"}"""
         }, "sessionExerciseId")
         mockMvc.post("/api/v1/workout-sessions/$session/exercises/$sessionExercise/sets") {
             header("Authorization", auth)
@@ -144,9 +149,9 @@ class ExerciseApiTest {
     private fun idOf(result: ResultActionsDsl, field: String = "id"): String =
         objectMapper.readTree(result.andReturn().response.contentAsString).get(field).asString()
 
-    private fun exercises(keyword: String? = null, user: SignedInUser = me): ResultActionsDsl =
+    private fun exercises(categoryId: UUID, user: SignedInUser = me): ResultActionsDsl =
         mockMvc.get("/api/v1/exercises") {
             header("Authorization", "Bearer ${user.token}")
-            if (keyword != null) param("keyword", keyword)
+            param("categoryId", categoryId.toString())
         }
 }

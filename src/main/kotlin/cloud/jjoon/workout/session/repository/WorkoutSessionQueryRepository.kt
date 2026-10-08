@@ -1,39 +1,39 @@
 package cloud.jjoon.workout.session.repository
 
 import cloud.jjoon.workout.jooq.Tables.EXERCISE
+import cloud.jjoon.workout.jooq.Tables.EXERCISE_CATEGORY
 import cloud.jjoon.workout.jooq.Tables.WORKOUT_SESSION
 import cloud.jjoon.workout.jooq.Tables.WORKOUT_SESSION_EXERCISE
 import cloud.jjoon.workout.jooq.Tables.WORKOUT_SET
 import cloud.jjoon.workout.session.domain.WorkoutSessionStatus
 import org.jooq.DSLContext
 import org.jooq.Field
-import org.jooq.impl.DSL.arrayAgg
 import org.jooq.impl.DSL.exists
 import org.jooq.impl.DSL.max
 import org.jooq.impl.DSL.field
 import org.jooq.impl.DSL.row
 import org.jooq.impl.DSL.select
-import org.jooq.impl.DSL.selectCount
 import org.jooq.impl.DSL.selectOne
 import org.springframework.stereotype.Repository
 import java.math.BigDecimal
-import java.time.Duration
 import java.time.Instant
-import java.time.LocalDate
 import java.util.UUID
 
 @Repository
 class WorkoutSessionQueryRepository(private val dsl: DSLContext) {
 
-    /** The session's exercises and their sets in the order they were added, read in one query. */
+    /** The session's exercises with their body part and sets, in the order they were added, read in one query. */
     fun findExercises(sessionId: UUID): List<SessionExerciseRow> {
         val wse = WORKOUT_SESSION_EXERCISE
+        val category = EXERCISE_CATEGORY
         val rows = dsl.select(
-            wse.ID, wse.EXERCISE_ID, EXERCISE.NAME, EXERCISE.CATEGORY, EXERCISE.IMAGE_URL,
-            WORKOUT_SET.ID, WORKOUT_SET.WEIGHT, WORKOUT_SET.REPETITIONS,
+            wse.ID, wse.EXERCISE_ID, EXERCISE.NAME, EXERCISE.NAME_EN, EXERCISE.TARGET,
+            category.ID, category.NAME, category.SORT_ORDER,
+            WORKOUT_SET.ID, WORKOUT_SET.WEIGHT, WORKOUT_SET.REPETITIONS, WORKOUT_SET.CREATED_AT,
         )
             .from(wse)
             .join(EXERCISE).on(EXERCISE.ID.eq(wse.EXERCISE_ID))
+            .join(category).on(category.ID.eq(EXERCISE.EXERCISE_CATEGORY_ID))
             .leftJoin(WORKOUT_SET).on(WORKOUT_SET.WORKOUT_SESSION_EXERCISE_ID.eq(wse.ID))
             .where(wse.WORKOUT_SESSION_ID.eq(sessionId))
             .orderBy(wse.CREATED_AT, wse.ID, WORKOUT_SET.CREATED_AT, WORKOUT_SET.ID)
@@ -44,50 +44,15 @@ class WorkoutSessionQueryRepository(private val dsl: DSLContext) {
                 sessionExerciseId = first.value1(),
                 exerciseId = first.value2(),
                 name = first.value3(),
-                category = first.value4(),
-                imageUrl = first.value5(),
-                sets = group.filter { it.value6() != null }.map { SetRow(it.value6(), it.value7(), it.value8()) },
+                nameEn = first.value4(),
+                target = first.value5(),
+                categoryId = first.value6(),
+                categoryName = first.value7(),
+                categorySortOrder = first.value8(),
+                sets = group.filter { it.value9() != null }.map { SetRow(it.value9(), it.value10(), it.value11(), it.value12()) },
             )
         }
     }
-
-    /** One query for the page; exercise names and set counts are aggregated only for the sessions on it (NFR-PERF-002). */
-    fun findPage(userId: UUID, page: Int, size: Int): List<WorkoutSessionListItem> {
-        val ws = WORKOUT_SESSION
-        val wse = WORKOUT_SESSION_EXERCISE
-        val exerciseNames = field(
-            select(arrayAgg(EXERCISE.NAME).orderBy(wse.CREATED_AT, wse.ID))
-                .from(wse)
-                .join(EXERCISE).on(EXERCISE.ID.eq(wse.EXERCISE_ID))
-                .where(wse.WORKOUT_SESSION_ID.eq(ws.ID)),
-        )
-        val totalSets = field(
-            selectCount()
-                .from(WORKOUT_SET)
-                .join(wse).on(wse.ID.eq(WORKOUT_SET.WORKOUT_SESSION_EXERCISE_ID))
-                .where(wse.WORKOUT_SESSION_ID.eq(ws.ID)),
-        )
-        return dsl.select(ws.ID, ws.STATUS, ws.PERFORMED_DATE, ws.STARTED_AT, ws.ENDED_AT, exerciseNames, totalSets)
-            .from(ws)
-            .where(ws.USER_ID.eq(userId))
-            .orderBy(ws.PERFORMED_DATE.desc(), ws.STARTED_AT.desc(), ws.ID.desc())
-            .limit(size)
-            .offset(page.toLong() * size)
-            .fetch {
-                WorkoutSessionListItem(
-                    id = it.value1(),
-                    status = WorkoutSessionStatus.valueOf(it.value2()),
-                    performedDate = it.value3(),
-                    startedAt = it.value4(),
-                    endedAt = it.value5(),
-                    durationSeconds = it.value5()?.let { endedAt -> Duration.between(it.value4(), endedAt).seconds },
-                    exerciseNames = it.value6()?.distinct().orEmpty(), // each exercise once, in the order first added
-                    totalSets = it.value7(),
-                )
-            }
-    }
-
-    fun count(userId: UUID): Long = dsl.fetchCount(WORKOUT_SESSION, WORKOUT_SESSION.USER_ID.eq(userId)).toLong()
 
     /** Completes stale sessions that have sets, ending them at their last set (BR-013). Idempotent. */
     fun completeExpired(userId: UUID, cutoff: Instant, now: Instant): List<UUID> {
@@ -140,24 +105,16 @@ class WorkoutSessionQueryRepository(private val dsl: DSLContext) {
     }
 }
 
-data class WorkoutSessionListItem(
-    val id: UUID,
-    val status: WorkoutSessionStatus,
-    val performedDate: LocalDate,
-    val startedAt: Instant,
-    val endedAt: Instant?,
-    val durationSeconds: Long?,
-    val exerciseNames: List<String>,
-    val totalSets: Int,
-)
-
 data class SessionExerciseRow(
     val sessionExerciseId: UUID,
     val exerciseId: UUID,
     val name: String,
-    val category: String,
-    val imageUrl: String?,
+    val nameEn: String,
+    val target: String,
+    val categoryId: UUID,
+    val categoryName: String,
+    val categorySortOrder: Int,
     val sets: List<SetRow>,
 )
 
-data class SetRow(val id: UUID, val weight: BigDecimal, val repetitions: Int)
+data class SetRow(val id: UUID, val weight: BigDecimal, val repetitions: Int, val createdAt: Instant)

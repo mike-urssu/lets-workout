@@ -34,15 +34,10 @@ class Operator(private val jdbc: JdbcTemplate) {
         jdbc.update("DELETE FROM users")
     }
 
-    /** Exercise rows are put in by schema scripts only (BR-009); tests add their own (design 3.6). */
-    fun addExercise(name: String, category: String, imageUrl: String? = null): UUID =
-        jdbc.queryForObject(
-            "INSERT INTO exercise (id, name, category, image_url) VALUES (uuidv7(), ?, ?, ?) RETURNING id",
-            UUID::class.java, name, category, imageUrl,
-        )!!
+    /** The catalog comes from schema script 2 (BR-009); tests look exercises up by name. */
+    fun exerciseId(name: String): UUID =
+        jdbc.queryForObject("SELECT id FROM exercise WHERE name = ?", UUID::class.java, name)!!
 
-    /** Accounts must go first: sessions referencing exercises are deleted with their users. */
-    fun deleteAllExercises() {
-        jdbc.update("DELETE FROM exercise")
-    }
+    fun categoryId(name: String): UUID =
+        jdbc.queryForObject("SELECT id FROM exercise_category WHERE name = ?", UUID::class.java, name)!!
 }

@@ -1,6 +1,11 @@
 spring:
   application:
     name: backend
+  servlet:
+    multipart:
+      # A little above the 100MB video limit so the service can answer with the precise media error (architecture 10.1).
+      max-file-size: 110MB
+      max-request-size: 110MB
   jpa:
     open-in-view: false
     hibernate:
@@ -9,3 +14,11 @@ spring:
     deserialization:
       # Integer fields reject decimals such as 8.5 instead of truncating them (architecture 5).
       accept-float-as-int: false
+
+# Object storage (SeaweedFS S3 API). Values come from the environment on the server (deploy/compose.yaml).
+storage:
+  s3:
+    endpoint: ${STORAGE_S3_ENDPOINT:http://localhost:8333}
+    bucket: ${STORAGE_S3_BUCKET:workout}
+    access-key: ${STORAGE_S3_ACCESS_KEY:local}
+    secret-key: ${STORAGE_S3_SECRET_KEY:local}

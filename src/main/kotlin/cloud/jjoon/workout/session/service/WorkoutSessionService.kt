@@ -2,15 +2,13 @@ package cloud.jjoon.workout.session.service
 
 import cloud.jjoon.workout.common.error.BusinessException
 import cloud.jjoon.workout.common.error.ErrorCode
-import cloud.jjoon.workout.common.web.PageResponse
 import cloud.jjoon.workout.exercise.repository.ExerciseRepository
+import cloud.jjoon.workout.media.service.WorkoutMediaService
 import cloud.jjoon.workout.session.domain.WorkoutSession
 import cloud.jjoon.workout.session.domain.WorkoutSessionExercise
 import cloud.jjoon.workout.session.domain.WorkoutSet
 import cloud.jjoon.workout.session.domain.WorkoutSessionStatus
-import cloud.jjoon.workout.session.repository.SessionExerciseRow
 import cloud.jjoon.workout.session.repository.WorkoutSessionExerciseRepository
-import cloud.jjoon.workout.session.repository.WorkoutSessionListItem
 import cloud.jjoon.workout.session.repository.WorkoutSessionQueryRepository
 import cloud.jjoon.workout.session.repository.WorkoutSessionRepository
 import cloud.jjoon.workout.session.repository.WorkoutSetRepository
@@ -32,11 +30,12 @@ class WorkoutSessionService(
     private val setRepository: WorkoutSetRepository,
     private val exerciseRepository: ExerciseRepository,
     private val queryRepository: WorkoutSessionQueryRepository,
+    private val mediaService: WorkoutMediaService,
     private val clock: Clock,
 ) {
 
     @Transactional
-    fun start(userId: UUID, zone: ZoneId): WorkoutSessionDetailResponse {
+    fun start(userId: UUID, zone: ZoneId): WorkoutSessionResponse {
         if (sessionRepository.findByUserIdAndStatus(userId, WorkoutSessionStatus.IN_PROGRESS) != null) {
             throw BusinessException(ErrorCode.WORKOUT_SESSION_ALREADY_IN_PROGRESS)
         }
@@ -56,50 +55,47 @@ class WorkoutSessionService(
             throw BusinessException(ErrorCode.WORKOUT_SESSION_ALREADY_IN_PROGRESS)
         }
         log.info("event=workout_session.started userId={} sessionId={}", userId, session.id)
-        return WorkoutSessionDetailResponse.of(session, emptyList())
+        return WorkoutSessionResponse.of(session, emptyList())
     }
 
+    /** REQ-WORKOUT-009: the in-progress session with per-exercise and per-body-part totals. */
     @Transactional(readOnly = true)
-    fun getInProgress(userId: UUID): WorkoutSessionDetailResponse? =
-        sessionRepository.findByUserIdAndStatus(userId, WorkoutSessionStatus.IN_PROGRESS)?.let(::detail)
+    fun getInProgress(userId: UUID): WorkoutSessionResponse? =
+        sessionRepository.findByUserIdAndStatus(userId, WorkoutSessionStatus.IN_PROGRESS)?.let(::response)
 
+    /** REQ-WORKOUT-002: completes the session and attaches the chosen photos and videos in one transaction. */
     @Transactional
-    fun complete(userId: UUID, sessionId: UUID, memo: String?): WorkoutSessionDetailResponse {
+    fun complete(userId: UUID, sessionId: UUID, mediaIds: List<UUID>): WorkoutSessionResponse {
         val session = editable(userId, sessionId, ErrorCode.WORKOUT_SESSION_ALREADY_COMPLETED)
         if (!queryRepository.hasSets(sessionId)) throw BusinessException(ErrorCode.WORKOUT_SESSION_HAS_NO_SETS) // BR-012
+        mediaService.attach(userId, session, mediaIds)
         val now = clock.instant()
         session.status = WorkoutSessionStatus.COMPLETED
         session.endedAt = now
-        session.memo = memo
         session.updatedAt = now
-        log.info("event=workout_session.completed userId={} sessionId={}", userId, sessionId)
-        return detail(session)
+        log.info("event=workout_session.completed userId={} sessionId={} media={}", userId, sessionId, mediaIds.size)
+        return response(session)
     }
 
-    @Transactional(readOnly = true)
-    fun list(userId: UUID, page: Int, size: Int): PageResponse<WorkoutSessionListItem> =
-        PageResponse.of(queryRepository.findPage(userId, page, size), page, size, queryRepository.count(userId))
-
-    /** Deletes regardless of status; exercises and sets go by cascade (NFR-INTEG-002). */
+    /** REQ-WORKOUT-010: only an in-progress session can be cancelled; exercises, sets and media go by cascade. */
     @Transactional
-    fun delete(userId: UUID, sessionId: UUID) {
-        sessionRepository.delete(owned(userId, sessionRepository.findForUpdateById(sessionId)))
-        log.info("event=workout_session.deleted userId={} sessionId={}", userId, sessionId)
+    fun cancel(userId: UUID, sessionId: UUID) {
+        val session = editable(userId, sessionId, ErrorCode.WORKOUT_SESSION_ALREADY_COMPLETED)
+        sessionRepository.delete(session)
+        mediaService.deleteFilesOfSessions(userId, listOf(sessionId))
+        log.info("event=workout_session.cancelled userId={} sessionId={}", userId, sessionId)
     }
 
-    @Transactional(readOnly = true)
-    fun get(userId: UUID, sessionId: UUID): WorkoutSessionDetailResponse =
-        detail(owned(userId, sessionRepository.findByIdOrNull(sessionId)))
-
+    /** Adding an exercise already in the session returns it instead of adding it twice (DEC-WORKOUT-018). */
     @Transactional
-    fun addExercise(userId: UUID, sessionId: UUID, exerciseId: UUID): SessionExerciseResponse {
+    fun addExercise(userId: UUID, sessionId: UUID, exerciseId: UUID): AddedExercise {
         val session = editable(userId, sessionId)
-        val exercise = exerciseRepository.findByIdOrNull(exerciseId)
-            ?: throw BusinessException(ErrorCode.EXERCISE_NOT_FOUND)
-        val added = sessionExerciseRepository.save(WorkoutSessionExercise(session.id!!, exercise.id, clock.instant()))
-        return SessionExerciseResponse.of(
-            SessionExerciseRow(added.id!!, exercise.id, exercise.name, exercise.category, exercise.imageUrl, emptyList()),
-        )
+        if (!exerciseRepository.existsById(exerciseId)) throw BusinessException(ErrorCode.EXERCISE_NOT_FOUND)
+        val existing = sessionExerciseRepository.findByWorkoutSessionIdAndExerciseId(session.id!!, exerciseId)
+        val sessionExercise = existing
+            ?: sessionExerciseRepository.saveAndFlush(WorkoutSessionExercise(session.id!!, exerciseId, clock.instant()))
+        val row = queryRepository.findExercises(session.id!!).first { it.sessionExerciseId == sessionExercise.id }
+        return AddedExercise(created = existing == null, exercise = SessionExerciseResponse.of(row))
     }
 
     @Transactional
@@ -147,6 +143,7 @@ class WorkoutSessionService(
         setNumber = queryRepository.setNumber(set.id!!),
         weight = set.weight,
         repetitions = set.repetitions,
+        createdAt = set.createdAt,
     )
 
     /** Step (E) of design 3.2: lock the session, then check owner and status. */
@@ -166,8 +163,8 @@ class WorkoutSessionService(
         return session
     }
 
-    private fun detail(session: WorkoutSession): WorkoutSessionDetailResponse =
-        WorkoutSessionDetailResponse.of(session, queryRepository.findExercises(session.id!!))
+    private fun response(session: WorkoutSession): WorkoutSessionResponse =
+        WorkoutSessionResponse.of(session, queryRepository.findExercises(session.id!!))
 
     companion object {
         private val log = LoggerFactory.getLogger(WorkoutSessionService::class.java)
@@ -175,3 +172,5 @@ class WorkoutSessionService(
         private const val IN_PROGRESS_CONSTRAINT = "ux_workout_session_user_in_progress"
     }
 }
+
+data class AddedExercise(val created: Boolean, val exercise: SessionExerciseResponse)

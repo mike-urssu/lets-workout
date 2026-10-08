@@ -31,6 +31,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("software.amazon.awssdk:s3:2.55.12") // object storage over the S3 API (DEC-ARCH-014)
     implementation("tools.jackson.module:jackson-module-kotlin")
     runtimeOnly("org.postgresql:postgresql")
     jooqCodegen("org.jooq:jooq-meta-extensions:3.21.7")

@@ -6,4 +6,5 @@ import java.util.UUID
 
 interface WorkoutSessionExerciseRepository : JpaRepository<WorkoutSessionExercise, UUID> {
     fun findByIdAndWorkoutSessionId(id: UUID, workoutSessionId: UUID): WorkoutSessionExercise?
+    fun findByWorkoutSessionIdAndExerciseId(workoutSessionId: UUID, exerciseId: UUID): WorkoutSessionExercise?
 }

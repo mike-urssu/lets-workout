@@ -31,9 +31,6 @@ class WorkoutSession(
     @Column(name = "ended_at")
     var endedAt: Instant? = null,
 
-    @Column
-    var memo: String? = null,
-
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: Instant = startedAt,
 

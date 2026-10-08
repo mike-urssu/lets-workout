@@ -1,5 +1,6 @@
 package cloud.jjoon.workout.session.service
 
+import cloud.jjoon.workout.media.service.WorkoutMediaService
 import cloud.jjoon.workout.session.repository.WorkoutSessionQueryRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -17,6 +18,7 @@ import java.util.UUID
 @Service
 class ExpiredSessionCleaner(
     private val queryRepository: WorkoutSessionQueryRepository,
+    private val mediaService: WorkoutMediaService,
     private val clock: Clock,
 ) {
 
@@ -24,12 +26,12 @@ class ExpiredSessionCleaner(
     fun cleanUp(userId: UUID) {
         val now = clock.instant()
         val cutoff = now.minus(MAX_DURATION)
-        queryRepository.completeExpired(userId, cutoff, now).forEach {
-            log.info("event=workout_session.auto_completed userId={} sessionId={}", userId, it)
-        }
-        queryRepository.deleteExpiredWithoutSets(userId, cutoff).forEach {
-            log.info("event=workout_session.auto_deleted userId={} sessionId={}", userId, it)
-        }
+        val completed = queryRepository.completeExpired(userId, cutoff, now)
+        completed.forEach { log.info("event=workout_session.auto_completed userId={} sessionId={}", userId, it) }
+        mediaService.discardStaged(userId, completed) // nobody pressed save, so no upload is attached
+        val deleted = queryRepository.deleteExpiredWithoutSets(userId, cutoff)
+        deleted.forEach { log.info("event=workout_session.auto_deleted userId={} sessionId={}", userId, it) }
+        mediaService.deleteFilesOfSessions(userId, deleted)
     }
 
     companion object {
