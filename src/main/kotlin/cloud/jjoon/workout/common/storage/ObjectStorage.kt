@@ -14,8 +14,10 @@ import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import java.io.InputStream
 import java.net.URI
 import java.nio.file.Path
 
@@ -42,6 +44,14 @@ class ObjectStorage(
 
     fun put(key: String, file: Path, contentType: String) = call {
         s3.putObject(PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType).build(), RequestBody.fromFile(file))
+    }
+
+    /** Opens the object for streaming; [range] is an HTTP `Range` value passed through to the store. */
+    fun open(key: String, range: String? = null): StoredObject = call {
+        val request = GetObjectRequest.builder().bucket(bucket).key(key)
+        if (range != null) request.range(range)
+        val stream = s3.getObject(request.build())
+        StoredObject(stream, stream.response().contentLength(), stream.response().contentRange())
     }
 
     fun keys(prefix: String): List<String> = call {
@@ -75,3 +85,6 @@ class ObjectStorage(
         private val log = LoggerFactory.getLogger(ObjectStorage::class.java)
     }
 }
+
+/** [contentRange] is set when only part of the object was requested. */
+data class StoredObject(val stream: InputStream, val length: Long, val contentRange: String?)

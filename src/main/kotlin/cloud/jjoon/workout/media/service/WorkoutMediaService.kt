@@ -5,6 +5,7 @@ import cloud.jjoon.workout.common.error.ErrorCode
 import cloud.jjoon.workout.common.storage.MediaKind
 import cloud.jjoon.workout.common.storage.MediaProcessor
 import cloud.jjoon.workout.common.storage.ObjectStorage
+import cloud.jjoon.workout.common.storage.StoredObject
 import cloud.jjoon.workout.common.storage.afterCommit
 import cloud.jjoon.workout.media.domain.WorkoutMedia
 import cloud.jjoon.workout.media.repository.WorkoutMediaRepository
@@ -97,6 +98,22 @@ class WorkoutMediaService(
         afterCommit { storage.deleteQuietly(droppedKeys) }
     }
 
+    /**
+     * API-MEDIA-002, 003: only attached files (their session is completed) of the user's own sessions.
+     * Staged uploads and missing files are 404 (ERR-007), someone else's are 403 (ERR-004).
+     */
+    fun download(userId: UUID, mediaId: UUID, original: Boolean, range: String? = null): MediaDownload {
+        val media = mediaRepository.findByIdOrNull(mediaId) ?: throw BusinessException(ErrorCode.MEDIA_NOT_FOUND)
+        val session = sessionRepository.findByIdOrNull(media.workoutSessionId)
+        if (session == null || session.status != WorkoutSessionStatus.COMPLETED) throw BusinessException(ErrorCode.MEDIA_NOT_FOUND)
+        if (session.userId != userId) throw BusinessException(ErrorCode.FORBIDDEN)
+        return if (original) {
+            MediaDownload(media.contentType, storage.open(WorkoutMedia.originalKey(userId, session.id!!, mediaId), range))
+        } else {
+            MediaDownload(PREVIEW_CONTENT_TYPE, storage.open(WorkoutMedia.previewKey(userId, session.id!!, mediaId)))
+        }
+    }
+
     /** Auto-completed sessions keep no media: nobody pressed save (design REQ-WORKOUT-006 step 2). */
     fun discardStaged(userId: UUID, sessionIds: List<UUID>) {
         if (sessionIds.isEmpty()) return
@@ -141,3 +158,5 @@ data class WorkoutMediaResponse(
         fun of(media: WorkoutMedia) = WorkoutMediaResponse(media.id, media.mediaType, media.contentType, media.fileSize, media.createdAt)
     }
 }
+
+data class MediaDownload(val contentType: String, val file: StoredObject)

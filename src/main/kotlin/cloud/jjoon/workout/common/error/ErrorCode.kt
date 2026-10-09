@@ -25,8 +25,10 @@ enum class ErrorCode(val status: HttpStatus, val message: String) {
     EXERCISE_CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "운동 부위를 찾을 수 없습니다."),
     SESSION_EXERCISE_NOT_FOUND(HttpStatus.NOT_FOUND, "운동 기록에서 해당 운동을 찾을 수 없습니다."),
     WORKOUT_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "세트를 찾을 수 없습니다."),
+    WORKOUT_DAY_NOT_FOUND(HttpStatus.NOT_FOUND, "그날의 운동 기록을 찾을 수 없습니다."),
 
     MEDIA_UNSUPPORTED_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다. 사진은 JPEG·PNG·HEIC, 동영상은 MP4·MOV만 올릴 수 있습니다."),
     /** The message names the exceeded limit; see [BusinessException.userMessage] (workout-media 8.2). */
     MEDIA_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "올릴 수 있는 사진·동영상의 한도를 넘었습니다."),
+    MEDIA_NOT_FOUND(HttpStatus.NOT_FOUND, "사진·동영상을 찾을 수 없습니다."),
 }

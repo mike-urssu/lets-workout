@@ -19,6 +19,7 @@ import org.springframework.mock.web.MockMultipartFile
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.delete
+import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.multipart
 import org.springframework.test.web.servlet.post
 import tools.jackson.databind.ObjectMapper
@@ -224,6 +225,58 @@ class WorkoutMediaApiTest {
             storage.keys(prefix(othersSession, other)).filter { it.endsWith("original") })
     }
 
+    @Test
+    fun `REQ-MEDIA-002 붙은 사진의 미리보기는 캐시할 수 있는 JPEG로 받는다`() {
+        val id = idOf(upload(session, file("photo.png", png())))
+        complete(session, """{"mediaIds": ["$id"]}""")
+
+        val body = download(id, "preview").andExpect {
+            status { isOk() }
+            content { contentType(MediaType.IMAGE_JPEG) }
+            header { string("Cache-Control", "private, max-age=31536000, immutable") }
+        }.andReturn().response.contentAsByteArray
+        assertEquals(listOf(0xFF, 0xD8, 0xFF), body.take(3).map { it.toInt() and 0xFF })
+    }
+
+    @Test
+    fun `REQ-MEDIA-003 원본은 올린 파일 그대로 받고 Range를 보내면 그 범위만 받는다`() {
+        val photo = jpeg()
+        val id = idOf(upload(session, file("photo.jpg", photo)))
+        complete(session, """{"mediaIds": ["$id"]}""")
+
+        val whole = download(id, "original").andExpect {
+            status { isOk() }
+            content { contentType(MediaType.IMAGE_JPEG) }
+            header { string("Accept-Ranges", "bytes") }
+        }.andReturn().response.contentAsByteArray
+        assertEquals(photo.toList(), whole.toList())
+
+        val part = download(id, "original", range = "bytes=0-99").andExpect {
+            status { isPartialContent() }
+            header { string("Content-Range", "bytes 0-99/${photo.size}") }
+        }.andReturn().response.contentAsByteArray
+        assertEquals(photo.take(100), part.toList())
+    }
+
+    @Test
+    fun `ERR-007 ERR-004 붙지 않은 임시 파일과 지운 날의 파일은 찾을 수 없고 다른 사용자의 파일은 받을 수 없다`() {
+        val staged = idOf(upload(session, file("staged.jpg", jpeg())))
+        download(staged, "preview").andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("MEDIA_NOT_FOUND") }
+        }
+
+        complete(session, """{"mediaIds": ["$staged"]}""")
+        download(staged, "original", users.signIn("other.user")).andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("FORBIDDEN") }
+        }
+
+        mockMvc.delete("/api/v1/workout-days/2026-10-05") { header("Authorization", "Bearer ${me.token}") }
+            .andExpect { status { isNoContent() } }
+        download(staged, "original").andExpect { jsonPath("$.code") { value("MEDIA_NOT_FOUND") } }
+    }
+
     private fun prefix(sessionId: String, user: SignedInUser = me) = "users/${user.id}/workout-sessions/$sessionId/"
 
     private fun mediaCount() = jdbc.queryForObject("SELECT count(*) FROM workout_media", Int::class.java)
@@ -246,6 +299,12 @@ class WorkoutMediaApiTest {
         }.andExpect { status { isCreated() } }
         return sessionId
     }
+
+    private fun download(mediaId: String, kind: String, user: SignedInUser = me, range: String? = null): ResultActionsDsl =
+        mockMvc.get("/api/v1/media/$mediaId/$kind") {
+            header("Authorization", "Bearer ${user.token}")
+            if (range != null) header("Range", range)
+        }
 
     private fun upload(sessionId: String, file: MockMultipartFile, user: SignedInUser = me): ResultActionsDsl =
         mockMvc.multipart("/api/v1/workout-sessions/$sessionId/media") {
