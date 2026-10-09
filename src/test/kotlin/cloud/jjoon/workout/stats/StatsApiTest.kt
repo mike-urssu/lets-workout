@@ -179,17 +179,18 @@ class StatsApiTest {
     }
 
     @Test
-    fun `BR-018 ERR-005 ERR-008 종목은 1~4개, 날짜는 1~7개이고 중복이나 없는 종목은 입력값 오류다`() {
+    fun `ERR-005 종목은 1개 이상, 날짜는 1~7개이고 중복이나 없는 종목은 입력값 오류다`() {
         val four = listOf("벤치프레스", "스미스 벤치프레스", "인클라인 벤치프레스", "펙덱 플라이")
+        val legs = listOf("스쿼트", "레그 프레스", "레그 익스텐션", "레그 컬", "런지", "힙 어덕션", "힙 어브덕션", "힙 쓰러스트")
         val sevenDays = days(1..7).toList()
         exerciseVolumes(four, sevenDays).andExpect { status { isOk() } }
+        exerciseVolumes(legs, sevenDays).andExpect { status { isOk() } } // BR-017: a whole body part, no count limit
 
         fun rejects(result: ResultActionsDsl, field: String) = result.andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("VALIDATION_FAILED") }
             jsonPath("$.errors[0].field") { value(field) }
         }
-        rejects(exerciseVolumes(four + "스쿼트", sevenDays), "exerciseIds")                 // ERR-008
         rejects(exerciseVolumes(emptyList(), sevenDays), "exerciseIds")
         rejects(exerciseVolumes(listOf("벤치프레스", "벤치프레스"), sevenDays), "exerciseIds")
         rejects(exerciseVolumesById(listOf(UUID.randomUUID().toString()), sevenDays), "exerciseIds") // ERR-005

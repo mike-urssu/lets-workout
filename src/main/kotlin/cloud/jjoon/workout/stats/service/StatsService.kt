@@ -50,8 +50,9 @@ class StatsService(
     /** API-STATS-003: each exercise's volume on the given days, the same axis as the body-part trend (BR-015). */
     @Transactional(readOnly = true)
     fun exerciseVolumes(userId: UUID, exerciseIds: List<UUID>, dates: List<LocalDate>): ExerciseVolumeTrendResponse {
-        if (exerciseIds.size !in 1..MAX_EXERCISES || exerciseIds.toSet().size != exerciseIds.size) {
-            throw invalid("exerciseIds", "1개 이상 ${MAX_EXERCISES}개 이하로 겹치지 않게 골라야 합니다.") // BR-018, ERR-008
+        // No count limit: distinct existing exercises are bounded by the catalog (DEC-STATS-009).
+        if (exerciseIds.isEmpty() || exerciseIds.toSet().size != exerciseIds.size) {
+            throw invalid("exerciseIds", "1개 이상 겹치지 않게 골라야 합니다.")
         }
         if (dates.size !in 1..DAYS || dates.toSet().size != dates.size) {
             throw invalid("dates", "1개 이상 ${DAYS}개 이하의 서로 다른 날짜여야 합니다.") // BR-004
@@ -71,7 +72,6 @@ class StatsService(
 
     companion object {
         const val DAYS = 7 // BR-004
-        const val MAX_EXERCISES = 4 // BR-018
     }
 }
 
