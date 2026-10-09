@@ -1,6 +1,6 @@
 # Let's Workout 공통 설계 문서
 
-- 문서 버전: v0.12
+- 문서 버전: v0.13
 - 작성일: 2026-10-05
 - 상태: 초안
 - 적용 대상: 모든 기능 설계 문서(`docs/design/<기능>.md`)가 이 문서를 따른다.
@@ -16,6 +16,7 @@
   - v0.10 (2026-10-09) — 파일 내려받기의 범위 요청과 캐시 규칙(5장, 10.1), SeaweedFS 4의 S3 인증 설정(D-TODO-ARCH-007), FFmpeg는 9.x에서 확인(D-TODO-ARCH-008). v0.9는 코드에 반영됨
   - v0.11 (2026-10-09) — 앱 컨테이너 기반 이미지를 Debian trixie + OpenJDK 21 + FFmpeg 7.1로 확정(D-TODO-ARCH-008 결정, `deploy/base-image/Dockerfile`), SeaweedFS 네트워크 `seaweedfs`(D-TODO-ARCH-007 일부 결정)
   - v0.12 (2026-10-09) — DB를 compose 안의 전용 컨테이너 대신 서버에 이미 떠 있는 PostgreSQL 컨테이너(`postgres`, 네트워크 `postgresql`)로 바꿈. Jenkins 기반 이미지 단계의 GHCR 로그인 방식(10.8)
+  - v0.13 (2026-10-09) — 운동 기록 설계를 요구사항 분리에 맞춰 `workout-common`·`workout-session`·`workout-exercise`·`workout-history`로 나눔. 통계 설계(`workout-stats`)를 위해 값 여러 개인 쿼리 파라미터 규칙(5장) 추가
 
 ---
 
@@ -74,8 +75,8 @@
 
 | 공통 설계 | 지원하는 요구사항 |
 |----------|----------------|
-| 7장 인증 방식 | auth NFR-SEC-001, workout-record NFR-SEC-001, workout-record ERR-001 |
-| 7.4 데이터 접근 제한 | workout-record NFR-SEC-002, BR-001, ERR-003 |
+| 7장 인증 방식 | auth NFR-SEC-001, workout-common NFR-SEC-001, workout-common ERR-001 |
+| 7.4 데이터 접근 제한 | workout-common NFR-SEC-002, BR-001, ERR-003 |
 | 7.7 계정 관리 절차 | auth 8.2 |
 | 8장 에러 정책 | 모든 ERR, NFR-AVAIL-001 |
 | 9장 비기능 공통 | NFR-PERF-001, NFR-PERF-003, NFR-AVAIL-001, NFR-LOG-001 |
@@ -209,6 +210,7 @@
 | 응답 코드 | 생성 201, 조회·수정·동작 200, 삭제 204, 결과 없음(단건 선택 조회) 204 |
 | 페이지 요청 | `page`(0부터, 기본 0), `size`(기본 20, 최대 100) |
 | 페이지 응답 | `{ "content": [...], "page": 0, "size": 20, "totalElements": 135, "totalPages": 7 }` |
+| 값 여러 개인 쿼리 파라미터 | 같은 이름을 반복한다. 예: `?exerciseIds=a&exerciseIds=b`. 쉼표로 이어 붙이지 않는다 |
 | 사용자 시간대 | 사용자 현지 날짜가 필요한 요청은 `X-Time-Zone` 헤더(IANA 시간대 이름, 예: `Asia/Seoul`)로 받는다 (DEC-ARCH-007) |
 | 인증 | `Authorization: Bearer <로그인 토큰>` (7.1) |
 | 파일 업로드 | `multipart/form-data`, 파일 부분 이름 `file`, 한 요청에 파일 하나. 실제 형식은 내용으로 확인하고 요청의 형식 표시는 믿지 않는다. 서버 전체 상한은 10.1 |

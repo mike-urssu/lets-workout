@@ -29,7 +29,7 @@ import java.time.Duration
 import javax.imageio.ImageIO
 import kotlin.test.assertEquals
 
-/** Workout days: the history calendar, per-date records and per-date delete (design workout-record v0.7). */
+/** Workout days: the history calendar, per-date records and per-date delete (design workout-history). */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration::class, TestClockConfiguration::class)

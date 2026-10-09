@@ -8,7 +8,7 @@
 - 변경 이력:
   - v0.2 — 구현 반영: 조건 검사 `ck_users_failed_pin_count` 제거(애플리케이션이 5 이상을 저장하지 않음), 로그인 행 조건부 갱신·삭제를 저장소(LoginSessionRepository)로 통합
   - v0.3 — 운영 사용 전이라 스키마 변경 1~3을 1 하나로 합침
-  - v0.4 (2026-10-09) — 요구사항 v0.4와 Figma 반영: 로그아웃은 홈(workout-record WO-001) 위쪽 로그아웃 버튼 → 확인 팝업(D-TODO-AUTH-001 결정), PIN 6자리를 다 입력하면 바로 로그인 요청(로그인 버튼 없음). 계정 삭제 시 파일 삭제 절차(공통 10.7) 참조 추가
+  - v0.4 (2026-10-09) — 요구사항 v0.4와 Figma 반영: 로그아웃은 홈(workout-session WO-001) 위쪽 로그아웃 버튼 → 확인 팝업(D-TODO-AUTH-001 결정), PIN 6자리를 다 입력하면 바로 로그인 요청(로그인 버튼 없음). 계정 삭제 시 파일 삭제 절차(공통 10.7) 참조 추가
   - v0.5 (2026-10-09) — Figma 로그인 화면대로: `AUTH_INVALID_CREDENTIALS` 문구를 "PIN이 올바르지 않습니다. 다시 입력해 주세요."로 변경(없는 아이디에도 같은 문구, BR-010), PIN은 자리마다 점으로 표시
   - v0.6 (2026-10-09) — 요구사항 v0.6(로그아웃 버튼 + 확인 팝업)에 맞춰 참조와 부록 C-5 정리. 설계 내용은 v0.4와 같다
 
@@ -82,7 +82,7 @@
 | DATA-001 | 계정 | 6.2 users | | |
 | DATA-002 | 로그인 | 6.2 login_session | | |
 | AUTH-001 | 로그인 화면 | 4.2 | | |
-| workout-record WO-001 | 홈 (로그아웃 버튼) | 4.1, 4.2 | | |
+| workout-session WO-001 | 홈 (로그아웃 버튼) | 4.1, 4.2 | | |
 
 ---
 
@@ -203,12 +203,12 @@ App ──API────▶ LoginTokenFilter ─▶ LoginSessionService(독립 
 | BR-009 | 잠금 중 올바른 PIN도 거절 | 서비스 | PIN 비교 전에 잠금 확인 | 401 AUTH_ACCOUNT_LOCKED |
 | BR-010 | 무엇이 틀렸는지 숨김 | 서비스 | 없는 아이디와 틀린 PIN에 같은 에러 코드·메시지 | 401 AUTH_INVALID_CREDENTIALS |
 | BR-011 | PIN 재발급·계정 삭제 시 즉시 종료 | DB | DB 자동 동작 `trg_users_pin_revoke_login`(PIN 변경 → 활성 로그인 `REVOKED`), 계정 삭제 → 참조(함께 삭제)로 로그인 행 삭제 | 401 AUTH_SESSION_REVOKED / UNAUTHORIZED |
-| BR-012 | 계정 삭제 시 모든 데이터 삭제 | DB, 운영 절차 | 사용자 소유 데이터는 모두 `users.id`를 참조(함께 삭제) (공통 6.1). 운동 기록은 workout-record 설계 6.2. 오브젝트 저장소의 파일은 참조로 지워지지 않으므로 운영자가 계정 삭제 전에 `users/{userId}/`를 지운다 (공통 7.7, 10.7) | — |
+| BR-012 | 계정 삭제 시 모든 데이터 삭제 | DB, 운영 절차 | 사용자 소유 데이터는 모두 `users.id`를 참조(함께 삭제) (공통 6.1). 운동 기록은 workout-common 설계 6.2. 오브젝트 저장소의 파일은 참조로 지워지지 않으므로 운영자가 계정 삭제 전에 `users/{userId}/`를 지운다 (공통 7.7, 10.7) | — |
 
 ### 3.6 기능 간 의존관계
 - 모든 기능(운동 기록 포함)의 인증은 이 문서의 인증 필터에 의존한다.
 - 인증 필터는 로그인 행이 있어야 동작한다. 로그인 API(REQ-AUTH-001)보다 먼저 구현하는 경우, 테스트는 픽스처로 로그인 행을 만든다(공통 7.6).
-- 운동 기록 테이블의 `user_id` 참조는 함께 삭제여야 한다(BR-012, workout-record 설계 v0.4).
+- 운동 기록 테이블의 `user_id` 참조는 함께 삭제여야 한다(BR-012, workout-common 설계 DEC-WORKOUT-014).
 
 ---
 
@@ -220,7 +220,7 @@ App ──API────▶ LoginTokenFilter ─▶ LoginSessionService(독립 
 |--------|-----|-----------|-----|
 | (앱 시작) | — | 앱 실행 | API-AUTH-003 `GET /api/v1/auth/session` (저장된 토큰이 있을 때) |
 | AUTH-001 | 로그인 | 로그인 | API-AUTH-001 `POST /api/v1/auth/login` |
-| workout-record WO-001 | 홈 | 로그아웃 버튼 → 확인 팝업에서 "로그아웃" | API-AUTH-002 `POST /api/v1/auth/logout` |
+| workout-session WO-001 | 홈 | 로그아웃 버튼 → 확인 팝업에서 "로그아웃" | API-AUTH-002 `POST /api/v1/auth/logout` |
 
 ### 4.2 화면별 연계 상세
 
@@ -228,7 +228,7 @@ App ──API────▶ LoginTokenFilter ─▶ LoginSessionService(독립 
 - 진입 조건: 앱 실행
 - 필요 데이터: 기기 보안 저장소의 토큰(공통 7.1, NFR-SEC-003)
 - API 호출: 토큰이 있으면 API-AUTH-003. 없으면 호출 없이 AUTH-001
-- 성공 처리: 204 → 홈(workout-record WO-001)
+- 성공 처리: 204 → 홈(workout-session WO-001)
 - 실패 처리: 401 → 토큰 삭제 후 AUTH-001로 이동하면서 에러 코드를 넘긴다(AUTH-001에서 사유 안내) / 네트워크 오류 → 재시도 안내(토큰은 지우지 않음)
 - 로딩 상태: 시작 화면 유지
 
@@ -237,7 +237,7 @@ App ──API────▶ LoginTokenFilter ─▶ LoginSessionService(독립 
 - 필요 데이터: 진입 사유 에러 코드(있으면)
 - 사용자 입력: 아이디(최대 100자, 칸 이름 "사용자 이름"), PIN(숫자 6자리. 입력한 자리마다 점으로 보이고 숫자는 보이지 않음, NFR-SEC-003). 앱에서도 PIN 형식을 미리 검증
 - API 호출: PIN 6자리를 다 입력하는 순간 API-AUTH-001 (로그인 버튼 없음, 요구사항 AUTH-001). 아이디가 비어 있으면 호출하지 않고 아이디 칸에 안내
-- 성공 처리: 200 → 토큰을 기기 보안 저장소에 저장하고 홈(workout-record WO-001)
+- 성공 처리: 200 → 토큰을 기기 보안 저장소에 저장하고 홈(workout-session WO-001)
 - 실패 처리 (에러 코드별 안내):
   - `AUTH_INVALID_CREDENTIALS` → PIN 칸 아래에 "PIN이 올바르지 않습니다. 다시 입력해 주세요.", PIN 칸을 비우고 빨간 테두리(Figma `login-failed`). 없는 아이디도 같다(BR-010)
   - `AUTH_ACCOUNT_LOCKED` → "PIN을 5회 잘못 입력해 잠겼습니다. {details.retryAt 현지 시각} 이후 다시 시도하세요."
@@ -246,7 +246,7 @@ App ──API────▶ LoginTokenFilter ─▶ LoginSessionService(독립 
 - 로딩 상태: 요청 중 PIN 입력을 막는다(같은 PIN으로 두 번 요청하지 않게)
 - 빈 상태: 해당 없음
 
-#### 로그아웃 — 홈(workout-record WO-001)의 로그아웃 버튼
+#### 로그아웃 — 홈(workout-session WO-001)의 로그아웃 버튼
 - 진입 조건: 홈 화면 위쪽 "로그아웃" 버튼 (운동 전·운동 중 홈 모두)
 - 사용자 입력: 확인 팝업 "로그아웃 하시겠어요?" → "로그아웃" 또는 "취소" (Figma `로그아웃 확인 팝업`)
 - API 호출: "로그아웃"을 누르면 API-AUTH-002 (저장된 토큰을 헤더에 넣어). "취소"는 호출 없이 팝업만 닫는다
@@ -347,7 +347,7 @@ Errors
 ```
 users 1 ──── N login_session          (참조: 함께 삭제)
   1
-  └──── N workout_session …           (참조: 함께 삭제, workout-record 설계)
+  └──── N workout_session …           (참조: 함께 삭제, workout-common 설계)
 ```
 
 ### 6.2 테이블 정의

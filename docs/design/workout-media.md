@@ -3,12 +3,12 @@
 - 문서 버전: v0.2
 - 변경 이력:
   - v0.1 — 운동 완료 시 첨부(REQ-MEDIA-001). 코드 반영됨
-  - v0.2 (2026-10-09) — 목록(REQ-MEDIA-002, workout-record API-WORKOUT-008), 미리보기·원본 내려받기(API-MEDIA-002·003), 미디어 뷰어(MEDIA-001) 설계. D-TODO-MEDIA-001 결정. 요구사항 v0.4 반영(부록 C-1 ~ 3 해결)
+  - v0.2 (2026-10-09) — 목록(REQ-MEDIA-002, workout-history API-WORKOUT-008), 미리보기·원본 내려받기(API-MEDIA-002·003), 미디어 뷰어(MEDIA-001) 설계. D-TODO-MEDIA-001 결정. 요구사항 v0.4 반영(부록 C-1 ~ 3 해결)
 - 작성일: 2026-10-09
 - 상태: 초안
 - 요구사항: `docs/requirements/workout-media.md` (v0.4)
 - 공통 설계: `docs/design/architecture.md` (v0.10)
-- 관련 설계: `docs/design/workout-record.md` (v0.7, 운동 세션 완료 API-WORKOUT-003·세션 정리·날짜별 기록 API-WORKOUT-008)
+- 관련 설계: `docs/design/workout-session.md` (v0.8, 운동 세션 완료 API-WORKOUT-003·세션 정리), `workout-history.md` (날짜별 기록 API-WORKOUT-008), `workout-common.md` (테이블·공통 규칙)
 - Figma: `workout-complete-popup` (18:4), `workout-history`의 오운완 인증(5:31), `media-viewer-popup` (18:168)
 
 ---
@@ -16,7 +16,7 @@
 ## 1. 설계 개요
 
 ### 1.1 목적
-운동을 완료할 때 오운완 인증 사진·동영상을 붙이고 지난 기록에서 다시 보는 기능을, 파일 하나씩 올리는 API와 미리보기·원본을 내려받는 API 3개, 운동 완료·날짜별 기록 API(workout-record)의 확장, 테이블 1개로 구현하는 방법을 확정한다. 파일은 오브젝트 저장소에 두고(공통 2.6), 미리보기는 업로드할 때 서버가 만든다(공통 DEC-ARCH-015).
+운동을 완료할 때 오운완 인증 사진·동영상을 붙이고 지난 기록에서 다시 보는 기능을, 파일 하나씩 올리는 API와 미리보기·원본을 내려받는 API 3개, 운동 완료·날짜별 기록 API(workout-session, workout-history)의 확장, 테이블 1개로 구현하는 방법을 확정한다. 파일은 오브젝트 저장소에 두고(공통 2.6), 미리보기는 업로드할 때 서버가 만든다(공통 DEC-ARCH-015).
 
 ### 1.2 설계 범위
 - 포함: REQ-MEDIA-001 (운동 완료 팝업에서 첨부, Figma 2행), REQ-MEDIA-002 날짜별 목록(Figma 4행 운동 기록 달력), REQ-MEDIA-003 크게 보기(미디어 뷰어), 미리보기 생성과 내려받기(IF-MEDIA-003), DATA-001, 세션 삭제·정리 때의 파일 삭제(BR-004)
@@ -27,7 +27,7 @@
 - Backend API: 신규 도메인 `media`(업로드 API, 서비스), 공통 파일 저장소·미디어 처리기(공통 2.2)
 - Database: 신규 테이블 `workout_media`
 - Object Storage: 원본 파일과 미리보기 이미지
-- Mobile App: 운동 완료 팝업(workout-record WO-002)
+- Mobile App: 운동 완료 팝업(workout-session WO-002)
 
 ### 1.4 기술 스택
 공통 설계 1.4를 따른다. 이 기능에 새로 필요한 기술 능력:
@@ -45,8 +45,8 @@
 ### 1.6 요구사항 ↔ 설계 추적표
 | 요구사항 ID | 요구사항 | 설계 반영 위치 | 구현 | 테스트 |
 |------------|---------|--------------|-----|-------|
-| REQ-MEDIA-001 | 운동 완료 시 사진·동영상 첨부 | 3.2, API-MEDIA-001, workout-record API-WORKOUT-003 `mediaIds`, workout_media | | |
-| REQ-MEDIA-002 | 날짜별 사진·동영상 목록 조회 | 3.2, workout-record API-WORKOUT-008 `media[]` | | |
+| REQ-MEDIA-001 | 운동 완료 시 사진·동영상 첨부 | 3.2, API-MEDIA-001, workout-session API-WORKOUT-003 `mediaIds`, workout_media | | |
+| REQ-MEDIA-002 | 날짜별 사진·동영상 목록 조회 | 3.2, workout-history API-WORKOUT-008 `media[]` | | |
 | REQ-MEDIA-003 | 사진·동영상 크게 보기 | 3.2, API-MEDIA-003, 4.2 MEDIA-001 | | |
 | BR-001 | 본인만 조회 | 7.2, 공통 2.6(비공개 저장소), 7.4 | | |
 | BR-002 | 완료할 때만 붙임, 이후 추가·삭제 불가 | 1.5, 3.4, 3.5 | | |
@@ -67,13 +67,13 @@
 | NFR-PERF-001 | 목록·미리보기 p95 500ms, 업로드는 진행 상황 | 9장 | | |
 | NFR-AVAIL-001 | 업로드 실패해도 세트를 잃지 않음 | 3.2, 4.2 | | |
 | NFR-INTEG-001 | 세션 없는 파일이 남지 않음 | 6.4, 공통 2.6 | | |
-| IF-MEDIA-001 | 완료하며 여러 개 올리기 | API-MEDIA-001 + workout-record API-WORKOUT-003 | | |
-| IF-MEDIA-002 | 날짜별 목록 | workout-record API-WORKOUT-008 `media[]` | | |
+| IF-MEDIA-001 | 완료하며 여러 개 올리기 | API-MEDIA-001 + workout-session API-WORKOUT-003 | | |
+| IF-MEDIA-002 | 날짜별 목록 | workout-history API-WORKOUT-008 `media[]` | | |
 | IF-MEDIA-003 | 원본과 미리보기 | 미리보기 생성 3.2, API-MEDIA-002, API-MEDIA-003 | | |
 | DATA-001 | 오운완 인증 사진·동영상 | 6.2 workout_media | | |
 | MEDIA-001 | 미디어 뷰어 | 4.2 | | |
-| workout-record WO-003 | 운동 기록 달력의 오운완 인증 | 4.2 | | |
-| workout-record WO-002 | 운동 완료 팝업의 오운완 인증 | 4.2 | | |
+| workout-history WO-003 | 운동 기록 달력의 오운완 인증 | 4.2 | | |
+| workout-session WO-002 | 운동 완료 팝업의 오운완 인증 | 4.2 | | |
 
 ---
 
@@ -99,15 +99,15 @@ App ──complete(mediaIds)──▶ WorkoutSessionController ─▶ WorkoutSes
 | 요구사항 ID | 기능 | API | 주요 컴포넌트 |
 |------------|-----|-----|-------------|
 | REQ-MEDIA-001 | 사진·동영상 임시 올리기 | API-MEDIA-001 | WorkoutMediaService.upload |
-| REQ-MEDIA-001 | 고른 파일을 붙이며 완료 | workout-record API-WORKOUT-003 | WorkoutSessionService.complete |
-| REQ-MEDIA-002 | 날짜별 목록 | workout-record API-WORKOUT-008 | WorkoutDayService.get |
+| REQ-MEDIA-001 | 고른 파일을 붙이며 완료 | workout-session API-WORKOUT-003 | WorkoutSessionService.complete |
+| REQ-MEDIA-002 | 날짜별 목록 | workout-history API-WORKOUT-008 | WorkoutDayService.get |
 | REQ-MEDIA-002, 003 | 미리보기 내려받기 | API-MEDIA-002 | WorkoutMediaService.download |
 | REQ-MEDIA-003 | 원본 내려받기 | API-MEDIA-003 | WorkoutMediaService.download |
 
 ### 3.2 기능별 처리 흐름
 
 #### REQ-MEDIA-001 (1) 사진·동영상 임시 올리기 (API-MEDIA-001)
-1. 인증 필터에서 userId (없으면 401, ERR-001). 방치된 세션 정리(workout-record REQ-WORKOUT-006)를 먼저 실행한다.
+1. 인증 필터에서 userId (없으면 401, ERR-001). 방치된 세션 정리(workout-session REQ-WORKOUT-006)를 먼저 실행한다.
 2. 요청에 파일 부분 `file`이 없거나 비었으면 400 `VALIDATION_FAILED`.
 3. **잠금 없이** 세션을 조회한다. 없으면 404 `WORKOUT_SESSION_NOT_FOUND`, 다른 사용자 것이면 403 `FORBIDDEN`(ERR-004), `COMPLETED`면 409 `WORKOUT_SESSION_NOT_EDITABLE`(ERR-005, BR-002). 이 세션의 임시 파일이 이미 10개면 400 `MEDIA_LIMIT_EXCEEDED`(`details.limit` = `COUNT`, BR-005). 오래 걸리는 처리 전에 빨리 거절하기 위한 확인이다.
 4. 파일을 임시 파일로 받는다. 미디어 처리기로 **내용을 보고** 형식을 판별한다(요청의 형식 표시는 믿지 않는다, 공통 5장).
@@ -120,16 +120,16 @@ App ──complete(mediaIds)──▶ WorkoutSessionController ─▶ WorkoutSes
 8. 7이 실패하면(확인 실패, DB 오류) 6에서 저장한 파일을 지우고 해당 오류를 응답한다(공통 2.6 저장 순서). 임시 파일은 성공·실패와 관계없이 지운다.
 9. 커밋, 로그 `workout_media.uploaded`(userId, sessionId, mediaId, 형식, 크기), 201.
 
-#### REQ-MEDIA-001 (2) 고른 파일을 붙이며 완료 (workout-record API-WORKOUT-003)
-처리 흐름 전체는 workout-record 설계 3.2 REQ-WORKOUT-002. 이 기능에 해당하는 단계:
+#### REQ-MEDIA-001 (2) 고른 파일을 붙이며 완료 (workout-session API-WORKOUT-003)
+처리 흐름 전체는 workout-session 설계 3.2 REQ-WORKOUT-002. 이 기능에 해당하는 단계:
 1. 본문 `mediaIds`(생략 시 빈 목록)를 검증한다: 10개 이하(BR-005), 중복 없음. 위반 시 400 `VALIDATION_FAILED`.
 2. 세션 변경 잠금 뒤, `mediaIds`가 모두 **이 세션의** `workout_media` 행인지 확인한다. 아니면 400 `VALIDATION_FAILED`(`errors[].field` = `mediaIds`).
 3. `mediaIds`의 순서대로 `sort_order` = 1, 2, … 를 저장한다(BR-003).
 4. 이 세션의 나머지 `workout_media` 행(고르지 않았거나 실패 후 남은 임시 파일)을 삭제하고, 그 파일 키들을 **커밋 후 작업**으로 지운다(BR-007).
 5. 세션 완료와 같은 트랜잭션에서 확정한다. 건너뛰기는 `mediaIds` = []로 같은 API를 부르므로 임시 파일이 모두 지워진다.
 
-#### REQ-MEDIA-002 날짜별 사진·동영상 목록 (workout-record API-WORKOUT-008)
-1. 날짜별 기록 처리(workout-record 3.2 REQ-WORKOUT-008)의 5단계에서, 그날 **완료된** 세션의 `workout_media`를 세션 시작 순 → `sort_order` 순으로 조회한다(쿼리 1회). 임시 파일은 진행 중 세션에만 있으므로 들어오지 않는다.
+#### REQ-MEDIA-002 날짜별 사진·동영상 목록 (workout-history API-WORKOUT-008)
+1. 날짜별 기록 처리(workout-history 3.2 REQ-WORKOUT-008)의 5단계에서, 그날 **완료된** 세션의 `workout_media`를 세션 시작 순 → `sort_order` 순으로 조회한다(쿼리 1회). 임시 파일은 진행 중 세션에만 있으므로 들어오지 않는다.
 2. 항목마다 `id`, `mediaType`, `contentType`, `previewUrl` = `/api/v1/media/{id}/preview`, `originalUrl` = `/api/v1/media/{id}/original`을 준다. 파일 자체는 주지 않는다.
 
 #### REQ-MEDIA-002, 003 미리보기·원본 내려받기 (API-MEDIA-002, API-MEDIA-003)
@@ -176,7 +176,7 @@ App                              API                                   DB / 오�
 | BR-007 | 하나라도 실패하면 완료 안 함, 일부만 남기지 않음 | 앱, 서비스 | 앱은 모든 업로드가 성공해야 완료를 부른다(4.2). 서버는 완료 때 고르지 않은 임시 파일을, 취소·자동 정리 때 모든 임시 파일을 지운다. DB 기록 실패 시 방금 저장한 파일을 지운다 | — |
 
 ### 3.6 기능 간 의존관계
-- 운동 세션(workout-record)이 있어야 올릴 수 있다. 완료 API의 `mediaIds`는 workout-record API-WORKOUT-003에 들어간다.
+- 운동 세션(workout-session)이 있어야 올릴 수 있다. 완료 API의 `mediaIds`는 workout-session API-WORKOUT-003에 들어간다.
 - 세션을 지우는 모든 경로(운동 취소 REQ-WORKOUT-010, 자동 정리 REQ-WORKOUT-006, 날짜 단위 삭제 REQ-WORKOUT-005)는 6.4의 파일 삭제를 호출해야 한다.
 - 오브젝트 저장소 접속 정보(공통 D-TODO-ARCH-007)와 미디어 처리 도구가 든 실행 환경(공통 D-TODO-ARCH-008)이 있어야 운영에서 동작한다.
 
@@ -187,16 +187,16 @@ App                              API                                   DB / 오�
 ### 4.1 화면-API 매핑
 | 화면 ID | 화면 | 사용자 행동 | API |
 |--------|-----|-----------|-----|
-| workout-record WO-002 | 운동 완료 팝업 | 저장하기 (고른 파일마다) | API-MEDIA-001 `POST /api/v1/workout-sessions/{sessionId}/media` |
-| workout-record WO-002 | 운동 완료 팝업 | 저장하기 (모두 올린 뒤) / 건너뛰기 | workout-record API-WORKOUT-003 `POST /api/v1/workout-sessions/{sessionId}/complete` |
-| workout-record WO-003 | 운동 기록 달력 | 날짜 선택 (오운완 인증 목록) | workout-record API-WORKOUT-008 `media[]`, 미리보기 API-MEDIA-002 |
+| workout-session WO-002 | 운동 완료 팝업 | 저장하기 (고른 파일마다) | API-MEDIA-001 `POST /api/v1/workout-sessions/{sessionId}/media` |
+| workout-session WO-002 | 운동 완료 팝업 | 저장하기 (모두 올린 뒤) / 건너뛰기 | workout-session API-WORKOUT-003 `POST /api/v1/workout-sessions/{sessionId}/complete` |
+| workout-history WO-003 | 운동 기록 달력 | 날짜 선택 (오운완 인증 목록) | workout-history API-WORKOUT-008 `media[]`, 미리보기 API-MEDIA-002 |
 | MEDIA-001 | 미디어 뷰어 | 사진·동영상 크게 보기, 넘기기 | API-MEDIA-003 `GET /api/v1/media/{mediaId}/original` |
 
 ### 4.2 화면별 연계 상세
 
-#### workout-record WO-002 운동 완료 팝업 — 오운완 인증 영역
-- 진입 조건: 홈에서 운동 종료 (workout-record 4.2)
-- 필요 데이터: 진행 중 세션 ID (workout-record API-WORKOUT-002)
+#### workout-session WO-002 운동 완료 팝업 — 오운완 인증 영역
+- 진입 조건: 홈에서 운동 종료 (workout-session 4.2)
+- 필요 데이터: 진행 중 세션 ID (workout-session API-WORKOUT-002)
 - 사용자 입력: "사진 또는 동영상 추가"로 앨범에서 고르거나 바로 촬영(요구사항 TODO-006). 앱은 고를 때 10개까지만 받고, 형식(JPEG·PNG·HEIC·MP4·MOV)과 크기·길이를 미리 확인해 넘는 파일은 고르지 않게 안내한다(서버가 다시 확인한다).
 - API 호출:
   - **저장하기**: 아직 올리지 않은 파일을 고른 순서대로 하나씩 API-MEDIA-001. 파일마다 진행 상황을 보여준다(NFR-PERF-001). 받은 `id`를 고른 순서대로 기억한다. 모두 성공하면 API-WORKOUT-003 `{ "mediaIds": [고른 순서] }`.
@@ -212,7 +212,7 @@ App                              API                                   DB / 오�
 - 로딩 상태: 업로드·완료 중 저장하기·건너뛰기 비활성, 파일별 진행 표시
 - 빈 상태: 고른 파일 없음 → "사진 또는 동영상 추가"만 표시. 저장하기는 `mediaIds` = []로 완료(건너뛰기와 같은 결과)
 
-#### workout-record WO-003 운동 기록 달력 — 오운완 인증 영역 (Figma `workout-history`)
+#### workout-history WO-003 운동 기록 달력 — 오운완 인증 영역 (Figma `workout-history`)
 - 진입 조건: 날짜를 고르고 그날 기록에 `media[]`가 있을 때만 영역을 보여준다
 - 필요 데이터: API-WORKOUT-008 → `media[]`의 `mediaType`, `previewUrl`
 - API 호출: 칸마다 `previewUrl`을 `Authorization` 헤더를 붙여 불러온다(앱의 이미지 컴포넌트가 헤더를 지원해야 한다). 사진은 미리보기, 동영상은 첫 장면 미리보기 위에 재생 표시(요구사항 TODO-007)
@@ -240,8 +240,8 @@ URL·필드·파일 업로드 규칙은 공통 설계 5장을 따른다.
 | API ID | Method | URL | 인증 | 설명 | 관련 요구사항 |
 |--------|--------|-----|-----|-----|-------------|
 | API-MEDIA-001 | POST | /api/v1/workout-sessions/{sessionId}/media | 필요 | 사진·동영상 하나를 임시로 올림 | REQ-MEDIA-001, IF-MEDIA-001, IF-MEDIA-003 |
-| (workout-record API-WORKOUT-003) | POST | /api/v1/workout-sessions/{sessionId}/complete | 필요 | `mediaIds`로 붙이며 완료 | REQ-MEDIA-001, IF-MEDIA-001 |
-| (workout-record API-WORKOUT-008) | GET | /api/v1/workout-days/{date} | 필요 | 그날 기록과 `media[]` 목록 | REQ-MEDIA-002, IF-MEDIA-002 |
+| (workout-session API-WORKOUT-003) | POST | /api/v1/workout-sessions/{sessionId}/complete | 필요 | `mediaIds`로 붙이며 완료 | REQ-MEDIA-001, IF-MEDIA-001 |
+| (workout-history API-WORKOUT-008) | GET | /api/v1/workout-days/{date} | 필요 | 그날 기록과 `media[]` 목록 | REQ-MEDIA-002, IF-MEDIA-002 |
 | API-MEDIA-002 | GET | /api/v1/media/{mediaId}/preview | 필요 | 미리보기 JPEG | REQ-MEDIA-002, IF-MEDIA-003 |
 | API-MEDIA-003 | GET | /api/v1/media/{mediaId}/original | 필요 | 원본(사진·동영상), Range 지원 | REQ-MEDIA-003, IF-MEDIA-003 |
 
@@ -293,7 +293,7 @@ Errors
 | 400 | MEDIA_LIMIT_EXCEEDED | 개수(`COUNT`)·크기(`FILE_SIZE`)·길이(`DURATION`) 초과 | ERR-003 |
 | 401 | UNAUTHORIZED | 인증 없음 | ERR-001 |
 | 403 | FORBIDDEN | 다른 사용자의 세션 | ERR-004 |
-| 404 | WORKOUT_SESSION_NOT_FOUND | 세션 없음(취소·자동 삭제 포함) | workout-record ERR-009 |
+| 404 | WORKOUT_SESSION_NOT_FOUND | 세션 없음(취소·자동 삭제 포함) | workout-common ERR-009 |
 | 409 | WORKOUT_SESSION_NOT_EDITABLE | 완료된 세션 | ERR-005 |
 | 503 | SERVICE_UNAVAILABLE | 오브젝트 저장소 장애 | ERR-006 |
 
@@ -376,14 +376,14 @@ users 1 ── N workout_session 1 ── N workout_media
   | 경로 | 지우는 파일 |
   |-----|----------|
   | 운동 완료(고르지 않은 임시 파일) | 그 미디어의 `original`, `preview.jpg` |
-  | 운동 취소(workout-record REQ-WORKOUT-010), 날짜 단위 삭제(REQ-WORKOUT-005, API-WORKOUT-009) | 세션 접두어 `users/{userId}/workout-sessions/{sessionId}/` 전체(그날 삭제한 세션마다) |
+  | 운동 취소(workout-session REQ-WORKOUT-010), 날짜 단위 삭제(REQ-WORKOUT-005, API-WORKOUT-009) | 세션 접두어 `users/{userId}/workout-sessions/{sessionId}/` 전체(그날 삭제한 세션마다) |
   | 방치된 세션 자동 완료(REQ-WORKOUT-006) | 그 세션의 임시 파일 전부(완료되지만 고른 파일이 없다) |
   | 방치된 세션 자동 삭제(REQ-WORKOUT-006) | 세션 접두어 전체 |
   | 계정 삭제(운영자) | `users/{userId}/` 전체 — 공통 10.7 절차 |
 - 파일 삭제가 실패하면 WARN 로그만 남긴다. 그 파일은 DB가 가리키지 않아 사용자에게 보이지 않는다(공통 DEC-ARCH-016).
 
 ### 6.5 스키마 변경 목록
-workout-record 설계 6.5의 스키마 변경 3 다음에 적용한다.
+workout-common 설계 6.5의 스키마 변경 3 다음에 적용한다.
 
 | 순서 | 변경 | 내용 |
 |-----|-----|-----|
@@ -430,7 +430,7 @@ workout-record 설계 6.5의 스키마 변경 3 다음에 적용한다.
 | ERR-002 | MEDIA_UNSUPPORTED_TYPE | 400 | 지원하지 않는 파일 형식입니다. 사진은 JPEG·PNG·HEIC, 동영상은 MP4·MOV만 올릴 수 있습니다. | — | 미디어 처리기 |
 | ERR-003 | MEDIA_LIMIT_EXCEEDED | 400 | 상한별 문장: "사진·동영상은 10개까지 올릴 수 있습니다." / "사진은 20MB까지 올릴 수 있습니다." / "동영상은 100MB까지 올릴 수 있습니다." / "동영상은 1분까지 올릴 수 있습니다." | `limit`: `COUNT` \| `FILE_SIZE` \| `DURATION`, `max`: 10 \| 바이트 수 \| 60 | WorkoutMediaService.upload |
 | ERR-004 | FORBIDDEN (공통) | 403 | 접근할 수 없는 데이터입니다. | — | WorkoutMediaService 소유자 확인 |
-| ERR-005 | WORKOUT_SESSION_NOT_EDITABLE (workout-record) | 409 | 완료된 운동 기록은 수정할 수 없습니다. | — | WorkoutMediaService.upload |
+| ERR-005 | WORKOUT_SESSION_NOT_EDITABLE (workout-common) | 409 | 완료된 운동 기록은 수정할 수 없습니다. | — | WorkoutMediaService.upload |
 | ERR-006 | SERVICE_UNAVAILABLE (공통) | 503 | 일시적으로 처리할 수 없습니다. 잠시 후 다시 시도해 주세요. | — | 파일 저장소 |
 | ERR-007 | MEDIA_NOT_FOUND | 404 | 사진·동영상을 찾을 수 없습니다. | — | WorkoutMediaService.download |
 
@@ -459,7 +459,7 @@ workout-record 설계 6.5의 스키마 변경 3 다음에 적용한다.
 | media | WorkoutMediaRepository | 저장소 | 행 저장, 세션별 개수, 세션별 조회, 고르지 않은 행 삭제 |
 | common | ObjectStorage | 파일 저장소 | 공통 10.1 |
 | common | MediaProcessor | 미디어 처리기 | 형식 판별, 길이, 미리보기 (공통 10.1) |
-| session | WorkoutSessionService.complete | 서비스 | `mediaIds` 처리(3.2 (2)), workout-record 설계 |
+| session | WorkoutSessionService.complete | 서비스 | `mediaIds` 처리(3.2 (2)), workout-session 설계 |
 
 ### 10.2 구현 순서
 | 순서 | 작업 | 관련 요구사항 | 완료 기준 |
@@ -468,9 +468,9 @@ workout-record 설계 6.5의 스키마 변경 3 다음에 적용한다.
 | 1 | 스키마 변경 4 | DATA-001 | 적용 성공, 조건 검사 테스트 |
 | 2 | 미디어 처리기 | BR-005, BR-006, IF-MEDIA-003 | JPEG·PNG·HEIC·MP4·MOV 판별, 다른 형식 거부, 61초 동영상 거부, 미리보기 긴 변 640 테스트 |
 | 3 | 업로드 API | REQ-MEDIA-001, ERR-002 ~ ERR-006 | 201, 형식·크기·길이·개수 400, 완료된 세션 409, 저장소 장애 503(DB 행 없음) 테스트 |
-| 4 | 완료 API의 `mediaIds` (workout-record 10.2와 함께) | BR-003, BR-007 | 순서 저장, 고르지 않은 행·파일 삭제, 건너뛰기 시 모두 삭제 테스트 |
+| 4 | 완료 API의 `mediaIds` (workout-session 10.2와 함께) | BR-003, BR-007 | 순서 저장, 고르지 않은 행·파일 삭제, 건너뛰기 시 모두 삭제 테스트 |
 | 5 | 세션 삭제 경로의 파일 삭제 | BR-004, NFR-INTEG-001 | 취소·자동 정리 후 저장소에 파일 없음 테스트 |
-| 6 | 날짜별 목록(workout-record 10.2 순서 10과 함께) | REQ-MEDIA-002 | 붙은 순서, 임시 파일 제외 테스트 |
+| 6 | 날짜별 목록(workout-history 10.2 순서 10과 함께) | REQ-MEDIA-002 | 붙은 순서, 임시 파일 제외 테스트 |
 | 7 | 미리보기·원본 내려받기 | REQ-MEDIA-003, ERR-004, ERR-007 | 200·형식, Range 206, 임시 파일 404, 다른 사용자 403, 날짜 삭제 후 404 테스트 |
 
 순서 0 ~ 5는 v0.1 반영으로 끝났다(2026-10-09).
@@ -499,9 +499,9 @@ workout-record 설계 6.5의 스키마 변경 3 다음에 적용한다.
 | DEC-MEDIA-007 | 원본은 `Range` 요청을 지원하고 저장소의 범위 읽기로 넘긴다 | 동영상 재생기는 범위 요청으로 앞부분부터 재생하고 넘겨 보기를 한다. 100MB 동영상을 다 받은 뒤 재생하지 않아도 된다 | 전체만 지원: 긴 동영상의 첫 재생이 늦고 넘겨 보기가 안 됨 |
 
 ## 부록 B. 설계 미결정 사항
-- **D-TODO-MEDIA-001** ~~날짜별 목록, 크게 보기, 없는 파일 오류, 미디어 뷰어 연계~~ **결정됨 (v0.2):** 3.2, 4.2, API-MEDIA-002·003, workout-record API-WORKOUT-008
+- **D-TODO-MEDIA-001** ~~날짜별 목록, 크게 보기, 없는 파일 오류, 미디어 뷰어 연계~~ **결정됨 (v0.2):** 3.2, 4.2, API-MEDIA-002·003, workout-history API-WORKOUT-008
 
 ## 부록 C. 요구사항 피드백
-1. ~~**ERR-004의 "존재 여부도 드러내지 않는다":**~~ **해결 (요구사항 v0.4):** 문구를 빼고 권한 오류(403)로 맞췄다. 권한 오류(403)를 돌려주면 그 ID의 세션·파일이 **있다는 것**이 드러난다. 숨기려면 다른 사용자 것도 "찾을 수 없음"(404)으로 응답해야 하는데, 그러면 ERR-004의 "권한 오류"와 다르다. 운동 기록(workout-record 부록 C-5, DEC-WORKOUT-007)도 같은 문제를 403으로 정했다. (설계: 403. 요구사항에서 "존재 여부도 드러내지 않는다"를 빼거나, 두 문서 모두 404로 바꾸기를 제안한다)
+1. ~~**ERR-004의 "존재 여부도 드러내지 않는다":**~~ **해결 (요구사항 v0.4):** 문구를 빼고 권한 오류(403)로 맞췄다. 권한 오류(403)를 돌려주면 그 ID의 세션·파일이 **있다는 것**이 드러난다. 숨기려면 다른 사용자 것도 "찾을 수 없음"(404)으로 응답해야 하는데, 그러면 ERR-004의 "권한 오류"와 다르다. 운동 기록(workout-common 부록 C-5, DEC-WORKOUT-007)도 같은 문제를 403으로 정했다. (설계: 403. 요구사항에서 "존재 여부도 드러내지 않는다"를 빼거나, 두 문서 모두 404로 바꾸기를 제안한다)
 2. ~~**BR-002 "진행 중인 세션에는 붙일 수 없다"와 임시 업로드:**~~ **해결 (요구사항 v0.4):** "먼저 올려 두고 완료하면서 붙인다"로 고쳤다. 설계는 완료 전에 진행 중 세션으로 파일을 임시로 올린다(DEC-MEDIA-001). 붙는 시점은 완료 요청이므로 규칙은 지켜지지만, 요구사항 문구만 보면 진행 중 세션에 올리는 것이 금지로 읽힐 수 있다. (설계: 임시 업로드는 붙인 것으로 보지 않는다)
 3. ~~**팝업을 닫은 뒤 남는 임시 파일:**~~ **해결 (요구사항 v0.4):** 요구사항 3.1에 설명을 넣었다. 요구사항 3.1은 "팝업 닫기 → 아무것도 올리지 않는다"인데, 저장하기 중 일부를 올리고 실패한 뒤 팝업을 닫으면 올린 파일이 서버에 임시로 남는다. 다음 완료·취소·자동 정리 때 지워진다. (설계: 그대로. 사용자에게는 보이지 않는다)

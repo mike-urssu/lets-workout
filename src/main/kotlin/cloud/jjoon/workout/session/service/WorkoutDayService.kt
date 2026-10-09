@@ -17,7 +17,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
 
-/** The history screen's view of workouts: one calendar month and one day at a time (design workout-record 3.2). */
+/** The history screen's view of workouts: one calendar month and one day at a time (design workout-history 3.2). */
 @Service
 class WorkoutDayService(
     private val queryRepository: WorkoutDayQueryRepository,
