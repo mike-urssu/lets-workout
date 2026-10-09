@@ -44,47 +44,54 @@ class StatsApiTest {
     }
 
     @Test
-    fun `REQ-STATS-001 BR-006 운동한 날마다 부위 4개의 볼륨을 주고 안 한 부위는 값이 없다`() {
+    fun `REQ-STATS-001 BR-020 고른 부위를 한 날만 그 부위의 볼륨과 함께 준다`() {
         workout(me, "벤치프레스", "스쿼트")                         // 10-05: 가슴 600, 하체 600
         clock.advance(Duration.ofDays(1))
         workout(me, "벤치프레스", "인클라인 벤치프레스")              // 10-06: 가슴 1200
         clock.advance(Duration.ofDays(2))
-        workout(me, "랫풀다운", weight = 0)                         // 10-08: 등 0 (bodyweight still counts)
+        val session = start(me)                                    // 10-08: 등 only, chest added without sets
+        addSet(session, addExercise(session, "랫풀다운", me), 60, me)
+        addExercise(session, "벤치프레스", me)
+        complete(session, me)
         clock.advance(Duration.ofDays(1))
-        workout(me, "스쿼트", complete = false)                     // 10-09: in progress, not a workout day yet
+        workout(me, "펙덱 플라이", weight = 0)                       // 10-09: 가슴 0 (bodyweight still counts)
+        clock.advance(Duration.ofDays(1))
+        workout(me, "벤치프레스", complete = false)                  // 10-10: in progress, not a workout day yet
 
-        categoryVolumes().andExpect {
+        categoryVolumes("가슴").andExpect {
             status { isOk() }
-            jsonPath("$.dates") { value(contains("2026-10-05", "2026-10-06", "2026-10-08")) }
-            jsonPath("$.categories[*].name") { value(contains("가슴", "등", "어깨", "하체")) }
-            jsonPath("$.categories[0].volumes") { value(contains<Any?>(600.0, 1200.0, null)) }
-            jsonPath("$.categories[1].volumes") { value(contains<Any?>(null, null, 0.0)) }
-            jsonPath("$.categories[2].volumes") { value(contains<Any?>(null, null, null)) }
-            jsonPath("$.categories[3].volumes") { value(contains<Any?>(600.0, null, null)) }
+            jsonPath("$.dates") { value(contains("2026-10-05", "2026-10-06", "2026-10-09")) }
+            jsonPath("$.volumes") { value(contains(600.0, 1200.0, 0.0)) }
             jsonPath("$.hasPrevious") { value(false) }
+        }
+        categoryVolumes("하체").andExpect {
+            jsonPath("$.dates") { value(contains("2026-10-05")) }
+            jsonPath("$.volumes") { value(contains(600.0)) }
         }
     }
 
     @Test
-    fun `REQ-STATS-002 BR-016 기준 날짜 이전으로 넘기면 운동한 날 하나씩 밀리고 처음 운동한 날에서 멈춘다`() {
-        repeat(10) {                                               // 10-05 … 10-14
+    fun `REQ-STATS-002 BR-016 BR-020 넘기면 고른 부위를 한 날 하나씩 밀리고 그 부위를 처음 한 날에서 멈춘다`() {
+        workout(me, "스쿼트")                                       // 10-05: legs only
+        clock.advance(Duration.ofDays(1))
+        repeat(10) {                                               // 10-06 … 10-15: chest
             workout(me, "벤치프레스")
             clock.advance(Duration.ofDays(1))
         }
 
         categoryVolumes().andExpect {
+            jsonPath("$.dates") { value(contains(*days(9..15))) }
+            jsonPath("$.hasPrevious") { value(true) }
+        }
+        categoryVolumes(before = "2026-10-15").andExpect {
+            status { isOk() }
             jsonPath("$.dates") { value(contains(*days(8..14))) }
             jsonPath("$.hasPrevious") { value(true) }
         }
-        categoryVolumes(before = "2026-10-14").andExpect {
-            status { isOk() }
-            jsonPath("$.dates") { value(contains(*days(7..13))) }
-            jsonPath("$.hasPrevious") { value(true) }
-        }
-        categoryVolumes(before = "2026-10-13").andExpect { jsonPath("$.dates") { value(contains(*days(6..12))) } }
-        categoryVolumes(before = "2026-10-12").andExpect {
-            jsonPath("$.dates") { value(contains(*days(5..11))) }
-            jsonPath("$.hasPrevious") { value(false) }
+        categoryVolumes(before = "2026-10-14").andExpect { jsonPath("$.dates") { value(contains(*days(7..13))) } }
+        categoryVolumes(before = "2026-10-13").andExpect {
+            jsonPath("$.dates") { value(contains(*days(6..12))) }
+            jsonPath("$.hasPrevious") { value(false) }               // 10-05 is a workout day, but not for chest
         }
     }
 
@@ -95,20 +102,35 @@ class StatsApiTest {
         workout(me, "스쿼트", complete = false)                     // 10-06, left in progress
         clock.advance(Duration.ofHours(7))
 
-        categoryVolumes().andExpect {
+        categoryVolumes("하체").andExpect {
             jsonPath("$.dates") { value(contains("2026-10-06")) }
-            jsonPath("$.categories[3].volumes") { value(contains<Any?>(600.0)) }
+            jsonPath("$.volumes") { value(contains(600.0)) }
+        }
+        categoryVolumes("가슴").andExpect { jsonPath("$.dates") { isEmpty() } }
+    }
+
+    @Test
+    fun `ERR-003 고른 부위를 한 날이 없으면 오류가 아니라 빈 결과다`() {
+        categoryVolumes().andExpect {
+            status { isOk() }
+            jsonPath("$.dates") { isEmpty() }
+            jsonPath("$.volumes") { isEmpty() }
+            jsonPath("$.hasPrevious") { value(false) }
         }
     }
 
     @Test
-    fun `ERR-003 운동 기록이 없으면 오류가 아니라 빈 결과다`() {
-        categoryVolumes().andExpect {
-            status { isOk() }
-            jsonPath("$.dates") { isEmpty() }
-            jsonPath("$.categories[*].name") { value(contains("가슴", "등", "어깨", "하체")) }
-            jsonPath("$.categories[0].volumes") { isEmpty() }
-            jsonPath("$.hasPrevious") { value(false) }
+    fun `ERR-009 부위별 추이에 부위가 없거나 형식이 틀리거나 없는 부위면 입력값 오류다`() {
+        listOf(null, "chest").forEach {
+            categoryVolumesById(it).andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("VALIDATION_FAILED") }
+            }
+        }
+        categoryVolumesById(UUID.randomUUID().toString()).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("VALIDATION_FAILED") }
+            jsonPath("$.errors[0].field") { value("categoryId") }
         }
     }
 
@@ -216,10 +238,8 @@ class StatsApiTest {
                 .andReturn().response.contentAsString,
         )
         val byName = day.get("categories").associate { it.get("name").asString() to it.get("volume").asDouble() }
-        categoryVolumes().andExpect {
-            jsonPath("$.categories[0].volumes") { value(contains<Any?>(byName.getValue("가슴"))) } // 620 + 0 + 350 + 400
-            jsonPath("$.categories[3].volumes") { value(contains<Any?>(byName.getValue("하체"))) }
-        }
+        categoryVolumes("가슴").andExpect { jsonPath("$.volumes") { value(contains(byName.getValue("가슴"))) } } // 620 + 0 + 350 + 400
+        categoryVolumes("하체").andExpect { jsonPath("$.volumes") { value(contains(byName.getValue("하체"))) } }
     }
 
     private fun exerciseVolumes(exercises: List<String>, dates: List<String>): ResultActionsDsl =
@@ -240,9 +260,13 @@ class StatsApiTest {
 
     private fun days(range: IntRange): Array<String> = range.map { "2026-10-%02d".format(it) }.toTypedArray()
 
-    private fun categoryVolumes(before: String? = null, user: SignedInUser = me): ResultActionsDsl =
+    private fun categoryVolumes(category: String = "가슴", before: String? = null): ResultActionsDsl =
+        categoryVolumesById(operator.categoryId(category).toString(), before)
+
+    private fun categoryVolumesById(categoryId: String?, before: String? = null): ResultActionsDsl =
         mockMvc.get("/api/v1/stats/category-volumes") {
-            header("Authorization", "Bearer ${user.token}")
+            header("Authorization", "Bearer ${me.token}")
+            categoryId?.let { param("categoryId", it) }
             before?.let { param("before", it) }
         }
 

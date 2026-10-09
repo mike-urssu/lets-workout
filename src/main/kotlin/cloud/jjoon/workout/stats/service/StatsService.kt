@@ -20,23 +20,18 @@ class StatsService(
 ) {
 
     /**
-     * API-STATS-001: up to 7 workout days before [before] (the latest ones when null), oldest first, with every body
-     * part's volume per day. Passing the newest shown day moves the window back by one workout day (BR-016).
+     * API-STATS-001: up to 7 days the body part was trained before [before] (the latest ones when null), oldest first,
+     * with its volume per day. Passing the newest shown day moves the window back by one such day (BR-016, BR-020).
      */
     @Transactional(readOnly = true)
-    fun categoryVolumes(userId: UUID, before: LocalDate?): CategoryVolumeTrendResponse {
-        // One extra day tells whether earlier workout days exist (DEC-STATS-001).
-        val days = queryRepository.findWorkoutDays(userId, before, DAYS + 1)
+    fun categoryVolumes(userId: UUID, categoryId: UUID, before: LocalDate?): CategoryVolumeTrendResponse {
+        if (!exerciseQueryRepository.categoryExists(categoryId)) throw invalid("categoryId", "존재하지 않는 부위입니다.") // ERR-009
+        // One extra day tells whether earlier days exist (DEC-STATS-001).
+        val days = queryRepository.findWorkoutDays(userId, categoryId, before, DAYS + 1)
         val dates = days.take(DAYS).sorted()
-        val volumes = queryRepository.sumVolumeByCategory(userId, dates)
-        return CategoryVolumeTrendResponse(
-            dates = dates,
-            categories = queryRepository.findCategories().map { category ->
-                // A body part not trained that day has no value, not 0 (BR-006).
-                CategoryVolumes(category.id, category.name, dates.map { volumes[it to category.id] })
-            },
-            hasPrevious = days.size > DAYS,
-        )
+        val volumes = queryRepository.sumVolumeByDay(userId, categoryId, dates)
+        // Every day picked has the body part's sets, so each has a volume (BR-020).
+        return CategoryVolumeTrendResponse(dates, dates.map(volumes::getValue), hasPrevious = days.size > DAYS)
     }
 
     /** API-STATS-002: exercises of the body part the user has recorded, to pick for the exercise trend. */
@@ -75,9 +70,7 @@ class StatsService(
     }
 }
 
-data class CategoryVolumeTrendResponse(val dates: List<LocalDate>, val categories: List<CategoryVolumes>, val hasPrevious: Boolean)
-
-data class CategoryVolumes(val id: UUID, val name: String, val volumes: List<BigDecimal?>)
+data class CategoryVolumeTrendResponse(val dates: List<LocalDate>, val volumes: List<BigDecimal>, val hasPrevious: Boolean)
 
 data class ExerciseVolumeTrendResponse(val dates: List<LocalDate>, val exercises: List<ExerciseVolumes>)
 

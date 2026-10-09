@@ -25,9 +25,13 @@ class StatsController(
 
     /** API-STATS-001 */
     @GetMapping("/category-volumes")
-    fun categoryVolumes(@AuthenticationPrincipal userId: UUID, @RequestParam before: String?): CategoryVolumeTrendResponse {
+    fun categoryVolumes(
+        @AuthenticationPrincipal userId: UUID,
+        @RequestParam categoryId: UUID,
+        @RequestParam before: String?,
+    ): CategoryVolumeTrendResponse {
         expiredSessionCleaner.cleanUp(userId) // sessions past 6 hours count once auto-completed (DEC-STATS-007)
-        return statsService.categoryVolumes(userId, before?.let(::date))
+        return statsService.categoryVolumes(userId, categoryId, before?.let(::date))
     }
 
     /** API-STATS-002 */
