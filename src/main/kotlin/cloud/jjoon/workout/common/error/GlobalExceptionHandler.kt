@@ -16,7 +16,7 @@ class GlobalExceptionHandler(private val clock: Clock) {
     @ExceptionHandler(BusinessException::class)
     fun handleBusiness(e: BusinessException): ResponseEntity<ErrorResponse> =
         ResponseEntity.status(e.code.status)
-            .body(ErrorResponse(e.code.name, e.userMessage ?: e.code.message, clock.instant(), details = e.details))
+            .body(ErrorResponse(e.code.name, e.userMessage ?: e.code.message, clock.instant(), errors = e.errors, details = e.details))
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleInvalid(e: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
