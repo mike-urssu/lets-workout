@@ -117,6 +117,16 @@ class ExerciseApiTest {
     }
 
     @Test
+    fun `DEC-WORKOUT-012 세트 없이 추가만 하고 완료한 종목은 최근 수행일이 없다`() {
+        workout(me, "벤치프레스", complete = true, addedWithoutSets = listOf("스미스 벤치프레스"))
+
+        exercises(operator.categoryId("가슴")).andExpect {
+            jsonPath("$[?(@.name == '벤치프레스')].lastPerformedDate") { value(contains("2026-10-05")) }
+            jsonPath("$[?(@.name == '스미스 벤치프레스')].lastPerformedDate") { value(contains(nullValue())) }
+        }
+    }
+
+    @Test
     fun `BR-013 6시간이 지나 자동 완료된 세션도 최근 수행일에 반영된다`() {
         workout(me, "벤치프레스", complete = false)
         clock.advance(Duration.ofHours(7))
@@ -124,7 +134,7 @@ class ExerciseApiTest {
         exercises(operator.categoryId("가슴")).andExpect { jsonPath("$[0].lastPerformedDate") { value("2026-10-05") } }
     }
 
-    private fun workout(user: SignedInUser, exercise: String, complete: Boolean) {
+    private fun workout(user: SignedInUser, exercise: String, complete: Boolean, addedWithoutSets: List<String> = emptyList()) {
         val auth = "Bearer ${user.token}"
         val session = idOf(mockMvc.post("/api/v1/workout-sessions") {
             header("Authorization", auth)
@@ -140,6 +150,13 @@ class ExerciseApiTest {
             contentType = MediaType.APPLICATION_JSON
             content = """{"weight": 60, "repetitions": 10}"""
         }.andExpect { status { isCreated() } }
+        addedWithoutSets.forEach { other ->
+            mockMvc.post("/api/v1/workout-sessions/$session/exercises") {
+                header("Authorization", auth)
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"exerciseId": "${operator.exerciseId(other)}"}"""
+            }.andExpect { status { isCreated() } }
+        }
         if (complete) {
             mockMvc.post("/api/v1/workout-sessions/$session/complete") { header("Authorization", auth) }
                 .andExpect { status { isOk() } }

@@ -100,7 +100,7 @@ workout-common 2장을 따른다.
 #### REQ-EXERCISE-001 부위의 운동 목록 (API-EXERCISE-001)
 1. (A), (B).
 2. `categoryId`(필수, UUID)를 검증한다. 없거나 형식이 틀리면 400. 없는 부위면 404 `EXERCISE_CATEGORY_NOT_FOUND`.
-3. 조회 저장소에서 한 쿼리로 그 부위의 `exercise`를 `sort_order` 순으로 조회하고, 사용자의 **완료된** 세션 기준 운동별 가장 최근 `performed_date`를 붙인다 (DEC-WORKOUT-012).
+3. 조회 저장소에서 한 쿼리로 그 부위의 `exercise`를 `sort_order` 순으로 조회하고, 사용자의 **완료된** 세션에서 세트를 1개 이상 기록한 운동별 가장 최근 `performed_date`를 붙인다 (DEC-WORKOUT-012). 세트 없이 추가만 한 운동은 세지 않는다.
 4. 200과 운동 목록(페이지 없음, DEC-WORKOUT-011). 운동 검색은 하지 않는다(요구사항 TODO-017).
 
 #### REQ-EXERCISE-001 세션에 운동 추가 (API-EXERCISE-002)
@@ -298,7 +298,7 @@ Response `200 OK`
 ]
 ```
 - 정렬: `exercise.sort_order`(요구사항 부록 A의 순서). 페이지 없음 (DEC-WORKOUT-011).
-- `lastPerformedDate`: 사용자의 완료된 세션 기준, 한 번도 안 했으면 null (DEC-WORKOUT-012). 앱이 "최근 3일 전 완료" / "기록 없음"으로 바꿔 보여준다.
+- `lastPerformedDate`: 사용자의 완료된 세션에서 세트를 1개 이상 기록한 날 기준, 한 번도 안 했으면 null (DEC-WORKOUT-012). 앱이 "최근 3일 전 완료" / "기록 없음"으로 바꿔 보여준다.
 - v0.5의 `keyword`, `category`(문자열), `imageUrl`은 없앤다.
 
 Validation
