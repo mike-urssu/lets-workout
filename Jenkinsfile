@@ -137,9 +137,7 @@ pipeline {
             }
         }
 
-        // Keep the 10 newest app images in GHCR and on the server. Jib stamps every image with the epoch as its creation
-        // time, so the order comes from when GHCR received each version. The base image and untagged versions (they may
-        // be parts of the base image's manifest list) are never deleted.
+        // Keep the 10 newest app images in GHCR, and only images in use on the server.
         stage('Prune images') {
             when { branch 'main' }
             steps {
@@ -152,13 +150,11 @@ pipeline {
                         // ponytail: first 100 versions only; pruning on every build keeps the package far below that.
                         def json = sh(script: 'curl -fsS -H "Authorization: Bearer $GHCR_TOKEN" "$VERSIONS_API?per_page=100"',
                                 returnStdout: true)
-                        def prune = pruneAppVersions(json, env.BASE_IMAGE.split(':')[1], 10)
-                        // The image just deployed must be among the kept ones; otherwise the listing is not what we expect.
-                        if (!(env.IMAGE_TAG in prune.keepTags)) {
+                        def stale = staleAppVersions(json, env.BASE_IMAGE.split(':')[1], 10, env.IMAGE_TAG)
+                        if (stale == null) {
                             error "GHCR listing does not include ${env.IMAGE_TAG}; not pruning"
                         }
-                        env.KEEP_TAGS = prune.keepTags.join(' ')
-                        for (v in prune.stale) {
+                        for (v in stale) {
                             echo "deleting ${env.IMAGE}:${v.tags.join(',')}"
                             withEnv(["VERSION_ID=${v.id}"]) {
                                 sh 'curl -fsS -X DELETE -H "Authorization: Bearer $GHCR_TOKEN" "$VERSIONS_API/$VERSION_ID"'
@@ -167,18 +163,8 @@ pipeline {
                     }
                 }
                 sshagent(credentials: ['deploy-ssh-key']) {
-                    // Remove the server's local tags of this image that GHCR no longer keeps.
-                    sh '''
-                        ssh -p "${DEPLOY_PORT:-22}" -o StrictHostKeyChecking=accept-new "$DEPLOY_HOST" sh -s -- "$IMAGE" $KEEP_TAGS <<'EOF'
-                            IMAGE=$1; shift
-                            docker images "$IMAGE" --filter dangling=false --format '{{.Tag}}' | while read -r tag; do
-                                case " $* " in
-                                    *" $tag "*) ;;
-                                    *) docker image rm "$IMAGE:$tag" || echo "kept $IMAGE:$tag (in use)" ;;
-                                esac
-                            done
-EOF
-                    '''
+                    // Removes every image no container uses; a rollback pulls an older one from GHCR.
+                    sh 'ssh -p "${DEPLOY_PORT:-22}" -o StrictHostKeyChecking=accept-new "$DEPLOY_HOST" docker image prune -af'
                 }
             }
         }
@@ -191,13 +177,18 @@ EOF
     }
 }
 
-// Splits the app's package versions (newest first; the base image and untagged versions left out) into the tags of the
-// `keep` newest and the [id, tags] of the rest.
+// The app's GHCR versions older than the `keep` newest, as [id, tags]. Newest means pushed last: Jib stamps every image
+// with the epoch as its creation time. The base image and untagged versions (they may be parts of the base image's
+// manifest list) are never returned. Returns null if the tag just deployed is not among the kept ones, since then the
+// listing is not what we expect. Needs a one-time script approval for JsonSlurperClassic.
 @NonCPS
-def pruneAppVersions(String json, String baseTag, int keep) {
+def staleAppVersions(String json, String baseTag, int keep, String deployedTag) {
     def versions = new groovy.json.JsonSlurperClassic().parseText(json)
-            .findAll { it.metadata.container.tags && !(baseTag in it.metadata.container.tags) }
-            .sort { a, b -> b.created_at <=> a.created_at }
-            .collect { [id: it.id, tags: it.metadata.container.tags] }
-    [keepTags: versions.take(keep).collectMany { it.tags }, stale: versions.drop(keep)]
+            .collect { [id: it.id, createdAt: it.created_at, tags: it.metadata.container.tags] }
+            .findAll { it.tags && !(baseTag in it.tags) }
+            .sort { a, b -> b.createdAt <=> a.createdAt }
+    if (!versions.take(keep).any { deployedTag in it.tags }) {
+        return null
+    }
+    versions.drop(keep).collect { [id: it.id, tags: it.tags] }
 }
