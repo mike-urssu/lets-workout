@@ -1,9 +1,9 @@
 # 운동 선택·세트 기록 설계 문서
 
-- 문서 버전: v0.8
+- 문서 버전: v0.9
 - 작성일: 2026-10-05
 - 상태: 초안
-- 요구사항: `docs/requirements/workout-exercise.md` (v0.7), 공통 `docs/requirements/workout-common.md` (v0.7)
+- 요구사항: `docs/requirements/workout-exercise.md` (v0.8), 공통 `docs/requirements/workout-common.md` (v0.7)
 - 공통 설계: `docs/design/architecture.md`, `docs/design/workout-common.md`
 - Figma: 3행 `exercise-list`(4:77), `workout-recording`(4:164), `이전 기록 덮어쓰기 확인`(83:201), `workout-recording-prev-loaded`(15:6), `today-workout-popup`(30:10)
 - 운동 기록 설계 묶음 (설계 ID와 요구사항 ID를 함께 쓴다, 색인은 `workout-common.md` 부록 D):
@@ -14,6 +14,7 @@
 - 변경 이력:
   - v0.2 ~ v0.7: `workout-common.md` 변경 이력 참고 (분리 전 `workout-record.md`)
   - v0.8 (2026-10-09) — `workout-record.md` 설계 v0.7을 요구사항 분리(v0.7)에 맞춰 `workout-common.md`, `workout-session.md`, `workout-exercise.md`, `workout-history.md`로 나눔. 설계 ID와 내용은 바꾸지 않았다
+  - v0.9 (2026-10-09) — 요구사항 v0.8 반영. API-EXERCISE-001 최근 수행일은 세트가 1개 이상인 세션 운동만 센다(DEC-WORKOUT-012)
 
 ---
 
@@ -487,7 +488,7 @@ workout-common 10.1을 따른다.
 | DEC-WORKOUT-008 | 부위 이미지는 애플리케이션과 함께 배포되는 공개 정적 파일로 `/images/exercise-categories/**`에서 제공하고, `exercise_category.image_url`에 URL 경로를 저장 (v0.6: 종목 이미지에서 부위 이미지로) | 서비스가 준비하는 고정 이미지 4개이고 사용자 업로드가 아니다. 외부 저장소가 필요 없다. **한계:** 이미지를 바꾸려면 배포가 필요하다 | 오브젝트 저장소: 사용자 파일용 비공개 저장소라 공개 이미지를 위해 공개 경로를 따로 열어야 함 |
 | DEC-WORKOUT-009 | 존재하지 않는 운동을 추가하면 404 `EXERCISE_NOT_FOUND` | 공통 정책 "대상 없음 = 404"와 일관 | 400: 경로·본문 참조에 따라 상태 코드가 달라져 앱 처리가 복잡 |
 | DEC-WORKOUT-011 | 운동 목록 API는 페이지 없이 부위의 전체를 반환 | 부위당 5~8개(요구사항 부록 A) | 페이지: 앱에 불필요한 복잡도 |
-| DEC-WORKOUT-012 | 운동의 최근 수행일은 완료된 세션 기준 | 진행 중 세션은 아직 확정되지 않은 기록이다. 통계(workout-stats BR-002)와 달력(BR-018)도 완료된 세션만 쓴다 | 진행 중 포함: 지금 하고 있는 운동이 "최근 수행"으로 보임 |
+| DEC-WORKOUT-012 | 운동의 최근 수행일은 완료된 세션에서 세트를 1개 이상 기록한 날 기준 | 진행 중 세션은 아직 확정되지 않은 기록이다. 세트 없는 운동은 완료 후에도 세션에 남지만(REQ-WORKOUT-002) 수행한 것이 아니다. 이전 기록(API-SET-004)도 같은 기준이다. 통계(workout-stats BR-002)와 달력(BR-018)도 완료된 세션만 쓴다 | 진행 중 포함: 지금 하고 있는 운동이 "최근 수행"으로 보임 |
 | DEC-WORKOUT-018 | 같은 운동을 다시 추가하면 새로 만들지 않고 기존 세션 운동을 200으로 돌려준다. 유일 제약으로 보장 (v0.6) | 요구사항 REQ-EXERCISE-001("다시 추가하지 않고 그 종목의 기록 화면으로"). 앱은 응답의 `sessionExerciseId`로 바로 그 화면으로 간다. 오류가 아니라 정상 흐름이다 | 409: 앱이 오류를 받아 다시 조회해야 함 |
 | DEC-WORKOUT-021 | 이전 기록이 없을 때(ERR-013) 204 | 운동 기록 화면에 들어올 때마다 부르는 조회라 "없음"이 정상 상황이다. 진행 중 세션 조회(API-WORKOUT-002)와 같은 방식 | 404 에러 코드: 정상 흐름에서 오류 로그·처리가 생김 |
 | DEC-WORKOUT-022 | 불러온 값은 서버에 저장하지 않는다. 불러오기 = 이전 기록 조회(읽기) + 덮어쓰기면 종목 세트 삭제 + 적용할 때마다 세트 추가 | BR-017(적용 전에는 세트가 아님)이 저장 구조로 보장된다. 새 테이블이나 "적용 전" 상태 컬럼이 필요 없다. **한계:** 앱을 껐다 켜면 적용하지 않은 값은 사라진다(다시 불러오면 된다) | 서버에 "불러온 값" 상태 저장: 테이블·상태가 늘고 요약·통계에서 빼는 조건이 모든 쿼리에 필요 |
