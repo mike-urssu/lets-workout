@@ -26,7 +26,7 @@ pipeline {
     environment {
         IMAGE_NAME = 'workout-backend'
         // Keep in step with jib.from.image in build.gradle.kts.
-        BASE_IMAGE = 'workout-backend-base:21-ffmpeg7'
+        BASE_IMAGE = 'workout-backend:21-ffmpeg7'
         DEPLOY_DIR = '/opt/projects/workout'
     }
 

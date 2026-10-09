@@ -96,7 +96,7 @@ tasks.withType<Test> {
 jib {
     from {
         // Java 21 + FFmpeg 7.1 for media previews; built from deploy/base-image/Dockerfile (DEC-ARCH-015)
-        image = "ghcr.io/mike-urssu/workout-backend-base:21-ffmpeg7"
+        image = "ghcr.io/mike-urssu/workout-backend:21-ffmpeg7"
         auth {
             username = System.getenv("GHCR_USER")
             password = System.getenv("GHCR_TOKEN")

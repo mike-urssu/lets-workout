@@ -52,7 +52,7 @@
 | jOOQ 코드 생성 (Gradle 플러그인, DDL 기반) | jOOQ와 동일 | Flyway 스크립트를 읽어 테이블 클래스를 만든다. 빌드에 DB가 필요 없다 (DEC-ARCH-002) | 실행 중인 DB에서 생성: 빌드에 DB나 컨테이너가 필요 |
 | Spring Security | Boot 관리, **추가** | 인증 필터 체인, 인증 실패 처리, 경로별 인증 적용을 표준 구조로 제공한다. 토큰 조회 필터 하나만 직접 만든다 (DEC-ARCH-011) | 보안 라이브러리 없이 필터 직접 구현: 경로별 적용·예외 처리까지 직접 만들어야 함 |
 | Bean Validation | Boot 관리, **추가** | 요청 검증을 선언적으로 처리 | 서비스에서 직접 검증: 검증 코드가 흩어짐 |
-| 컨테이너 이미지 (Jib Gradle 플러그인, 기반 `ghcr.io/mike-urssu/workout-backend-base:21-ffmpeg7` = Debian trixie + OpenJDK 21 JRE + FFmpeg 7.1) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
+| 컨테이너 이미지 (Jib Gradle 플러그인, 기반 `ghcr.io/mike-urssu/workout-backend:21-ffmpeg7` = Debian trixie + OpenJDK 21 JRE + FFmpeg 7.1) | 3.5.4 | 실행 환경을 이미지 하나로 고정해 서버 차이를 없앤다. Jib은 Dockerfile·Docker 데몬 없이 Gradle에서 바로 이미지를 만들어 푸시한다 (10.8) | 서버에 JDK 직접 설치: 서버마다 환경이 달라짐 / Dockerfile + `docker build`: Dockerfile 관리와 빌드용 Docker 데몬이 필요 |
 | GitHub Container Registry (GHCR) | — | 사용자 결정. 이미지 저장소 | — |
 | Jenkins (Multibranch Pipeline) | — | 사용자 결정. 모든 브랜치 테스트, main만 이미지 배포 (10.8) | — |
 | Docker Compose | — | 서버 1대에 앱과 DB를 함께 띄운다. 배포 = 이미지 태그 교체 후 재기동 (10.8) | Kubernetes: 지금 규모에 운영 부담이 큼 |
@@ -545,8 +545,8 @@ aws s3 rm --recursive "s3://<버킷>/users/<사용자 ID>/" --endpoint-url "<Sea
 ### 10.8 CI/CD
 | 파일 | 역할 |
 |-----|-----|
-| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Base image(`deploy/base-image`가 마지막 성공 빌드 뒤 바뀌었거나 레지스트리에 없을 때만 `ghcr.io/<owner>/workout-backend-base:21-ffmpeg7`을 `--pull`로 다시 만들어 푸시) → Publish image(`./gradlew jib`로 `ghcr.io/<owner>/workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
-| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반은 `ghcr.io/mike-urssu/workout-backend-base:21-ffmpeg7`(`deploy/base-image/Dockerfile`, 가져올 때도 `GHCR_USER`/`GHCR_TOKEN`으로 인증), `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
+| `Jenkinsfile` | Test(`./gradlew clean test`, 테스트 결과 수집) → main만: Base image(`deploy/base-image`가 마지막 성공 빌드 뒤 바뀌었거나 레지스트리에 없을 때만 `ghcr.io/<owner>/workout-backend:21-ffmpeg7`을 `--pull`로 다시 만들어 푸시) → Publish image(`./gradlew jib`로 `ghcr.io/<owner>/workout-backend:<버전>-<커밋 12자리>`와 `:latest` 푸시) → Deploy(SSH로 compose 파일·`release.env` 전송 후 `pull`·`up -d`) → Verify(서버에서 `GET /api/v1/auth/session`이 401을 줄 때까지 최대 60초 확인) |
+| `build.gradle.kts`의 `version`·`jib` | `version`은 시맨틱 버전이고, 이미지 태그 `<version>-<커밋 12자리>`의 앞부분이 된다. 기반은 `ghcr.io/mike-urssu/workout-backend:21-ffmpeg7`(`deploy/base-image/Dockerfile`, 가져올 때도 `GHCR_USER`/`GHCR_TOKEN`으로 인증), `linux/arm64` 이미지(운영 서버가 Apple Silicon + Colima), 일반 사용자(UID 501, GID 20)로 실행, 포트 8080. 이미지 이름은 CI가 `-Djib.to.image`로, 레지스트리 인증은 환경 변수 `GHCR_USER`/`GHCR_TOKEN`으로 넘긴다 |
 | `deploy/compose.yaml` | `app` 하나(이미지 `${IMAGE}:${IMAGE_TAG}`). 서버에 이미 있는 외부 네트워크 세 개에 붙는다: `proxy`(Traefik이 `workout-api.jjoon.cloud`를 받아 전달, 진입점 `websecure`, 인증서 `letsencrypt`), `postgresql`(DB 컨테이너 `postgres`, 접속은 `POSTGRES_HOST`(기본 `postgres`)·`POSTGRES_DB`·`POSTGRES_USER`·`POSTGRES_PASSWORD`), `seaweedfs`(S3 API, `STORAGE_S3_*`). 8080은 서버 localhost에만 열어 Verify에 쓴다 |
 | `deploy/base-image/Dockerfile` | 앱 컨테이너의 기반 이미지: Debian trixie + OpenJDK 21 JRE + FFmpeg 7.1(아이폰 HEIC 타일 사진을 읽는다. Ubuntu 기반 eclipse-temurin의 FFmpeg 6.1은 못 읽음). CI의 Base image 단계가 이 디렉터리가 바뀔 때 만들어 올린다. 보안 업데이트만 받으려면 Dockerfile을 고치거나(주석 포함) 레지스트리의 태그를 지워 다시 만들게 한다 |
 | `deploy/.env.example` | 서버의 `<DEPLOY_DIR>/.env` 견본(DB 이름·계정·비밀번호, 오브젝트 저장소 접속 정보). 실제 파일은 저장소에 넣지 않는다 |
