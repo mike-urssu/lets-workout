@@ -5,7 +5,8 @@
 //     PATH (media tests). Jib builds the app image without Docker.
 //   - Agent labelled 'macbook' runs the build.
 //   - Credentials:
-//       ghcr-credentials : Username/Password = GitHub user + PAT with write:packages
+//       ghcr-credentials : Username/Password = GitHub user + classic PAT with write:packages and delete:packages
+//   - Plugin: Workspace Cleanup (cleanWs).
 //       deploy-ssh-key   : SSH private key for the deploy server
 //   - Global property DEPLOY_HOST: user@host of the deploy server.
 //   - Optional environment GHCR_OWNER: GitHub user/org that owns the image (defaults to the GHCR username).
@@ -135,5 +136,68 @@ pipeline {
                 }
             }
         }
+
+        // Keep the 10 newest app images in GHCR and on the server. Jib stamps every image with the epoch as its creation
+        // time, so the order comes from when GHCR received each version. The base image and untagged versions (they may
+        // be parts of the base image's manifest list) are never deleted.
+        stage('Prune images') {
+            when { branch 'main' }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'ghcr-credentials',
+                        usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
+                    script {
+                        def owner = (env.GHCR_OWNER ?: env.GHCR_USER).toLowerCase()
+                        // ponytail: user-owned package only; an org owner needs /orgs/ instead of /users/.
+                        env.VERSIONS_API = "https://api.github.com/users/${owner}/packages/container/${env.IMAGE_NAME}/versions"
+                        // ponytail: first 100 versions only; pruning on every build keeps the package far below that.
+                        def json = sh(script: 'curl -fsS -H "Authorization: Bearer $GHCR_TOKEN" "$VERSIONS_API?per_page=100"',
+                                returnStdout: true)
+                        def prune = pruneAppVersions(json, env.BASE_IMAGE.split(':')[1], 10)
+                        // The image just deployed must be among the kept ones; otherwise the listing is not what we expect.
+                        if (!(env.IMAGE_TAG in prune.keepTags)) {
+                            error "GHCR listing does not include ${env.IMAGE_TAG}; not pruning"
+                        }
+                        env.KEEP_TAGS = prune.keepTags.join(' ')
+                        for (v in prune.stale) {
+                            echo "deleting ${env.IMAGE}:${v.tags.join(',')}"
+                            withEnv(["VERSION_ID=${v.id}"]) {
+                                sh 'curl -fsS -X DELETE -H "Authorization: Bearer $GHCR_TOKEN" "$VERSIONS_API/$VERSION_ID"'
+                            }
+                        }
+                    }
+                }
+                sshagent(credentials: ['deploy-ssh-key']) {
+                    // Remove the server's local tags of this image that GHCR no longer keeps.
+                    sh '''
+                        ssh -p "${DEPLOY_PORT:-22}" -o StrictHostKeyChecking=accept-new "$DEPLOY_HOST" sh -s -- "$IMAGE" $KEEP_TAGS <<'EOF'
+                            IMAGE=$1; shift
+                            docker images "$IMAGE" --filter dangling=false --format '{{.Tag}}' | while read -r tag; do
+                                case " $* " in
+                                    *" $tag "*) ;;
+                                    *) docker image rm "$IMAGE:$tag" || echo "kept $IMAGE:$tag (in use)" ;;
+                                esac
+                            done
+EOF
+                    '''
+                }
+            }
+        }
     }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
+
+// Splits the app's package versions (newest first; the base image and untagged versions left out) into the tags of the
+// `keep` newest and the [id, tags] of the rest.
+@NonCPS
+def pruneAppVersions(String json, String baseTag, int keep) {
+    def versions = new groovy.json.JsonSlurperClassic().parseText(json)
+            .findAll { it.metadata.container.tags && !(baseTag in it.metadata.container.tags) }
+            .sort { a, b -> b.created_at <=> a.created_at }
+            .collect { [id: it.id, tags: it.metadata.container.tags] }
+    [keepTags: versions.take(keep).collectMany { it.tags }, stale: versions.drop(keep)]
 }
