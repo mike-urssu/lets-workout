@@ -10,6 +10,7 @@
   - `workout-session.md` 홈·운동 진행 (Figma 2행)
   - `workout-exercise.md` 운동 선택·세트 기록 (Figma 3행)
   - `workout-history.md` 운동 기록 달력 (Figma 4행)
+  - `workout-exercise-manage.md` 운동 종목 관리 (Figma 6행)
 - 변경 이력:
   - v0.2 ~ v0.6: `workout-common.md` 변경 이력 참고 (분리 전 `workout-record.md`)
   - v0.7 (2026-10-09): `workout-record.md` v0.6을 화면 흐름에 따라 `workout-common.md`, `workout-session.md`, `workout-exercise.md`, `workout-history.md`로 나눔. ID 번호와 내용은 바꾸지 않았다.
@@ -26,7 +27,7 @@
   - 오운완 인증 사진·동영상 목록과 미디어 뷰어 → `workout-media.md`
   - 운동한 날 7개 단위의 추이 → `workout-stats.md`
   - API 상세 설계, DB 스키마, 아키텍처, 기술 스택(→ 설계 문서에서 다룸)
-- ID 규칙: 운동 기록 문서 네 개는 ID 번호를 함께 쓴다. 같은 번호가 두 문서에 있지 않으므로 묶음 안에서는 ID만 쓰고, 어느 문서에 있는지는 `workout-common.md` 부록 B(ID 색인)에서 찾는다. 다른 문서(auth, workout-media, workout-stats)의 ID는 문서 이름을 붙여 쓴다(예: workout-media REQ-MEDIA-001).
+- ID 규칙: 운동 기록 문서 다섯 개는 ID 번호를 함께 쓴다. 같은 번호가 두 문서에 있지 않으므로 묶음 안에서는 ID만 쓰고, 어느 문서에 있는지는 `workout-common.md` 부록 B(ID 색인)에서 찾는다. 다른 문서(auth, workout-media, workout-stats)의 ID는 문서 이름을 붙여 쓴다(예: workout-media REQ-MEDIA-001).
 - 대상 독자: 백엔드 개발자, 모바일 클라이언트 개발자, 테스트 담당자, 기획자.
 
 ### 1.2 서비스 / 기능 개요

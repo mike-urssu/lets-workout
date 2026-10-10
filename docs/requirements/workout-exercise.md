@@ -1,6 +1,6 @@
 # 운동 선택·세트 기록 요구사항 명세서
 
-- 문서 버전: v0.8
+- 문서 버전: v0.9
 - 작성일: 2026-10-05
 - 상태: 초안
 - 참고 문서:
@@ -10,10 +10,12 @@
   - `workout-session.md` 홈·운동 진행 (Figma 2행)
   - `workout-exercise.md` 운동 선택·세트 기록 (Figma 3행)
   - `workout-history.md` 운동 기록 달력 (Figma 4행)
+  - `workout-exercise-manage.md` 운동 종목 관리 (Figma 6행)
 - 변경 이력:
   - v0.2 ~ v0.6: `workout-common.md` 변경 이력 참고 (분리 전 `workout-record.md`)
   - v0.7 (2026-10-09): `workout-record.md` v0.6을 화면 흐름에 따라 `workout-common.md`, `workout-session.md`, `workout-exercise.md`, `workout-history.md`로 나눔. ID 번호와 내용은 바꾸지 않았다.
   - v0.8 (2026-10-09): 최근 수행일은 완료된 세션에서 세트를 1개 이상 기록한 날만 센다(EX-001). 세트 없이 추가만 한 종목이 "오늘 완료"로 보이던 문제
+  - v0.9 (2026-10-10): 운동 선택 화면(EX-001)에 "종목 관리" 진입 추가(`workout-exercise-manage.md`). 종목 목록은 본인 목록이다(BR-022). 종목이 없는 부위의 빈 상태(BR-030)
 
 ---
 
@@ -26,7 +28,7 @@
   - 운동 시작·완료·취소와 진행 현황 조회 → `workout-session.md`
   - 지난 기록 달력 → `workout-history.md`
   - API 상세 설계, DB 스키마, 아키텍처, 기술 스택(→ 설계 문서에서 다룸)
-- ID 규칙: 운동 기록 문서 네 개는 ID 번호를 함께 쓴다. 같은 번호가 두 문서에 있지 않으므로 묶음 안에서는 ID만 쓰고, 어느 문서에 있는지는 `workout-common.md` 부록 B(ID 색인)에서 찾는다. 다른 문서(auth, workout-media, workout-stats)의 ID는 문서 이름을 붙여 쓴다(예: workout-media REQ-MEDIA-001).
+- ID 규칙: 운동 기록 문서 다섯 개는 ID 번호를 함께 쓴다. 같은 번호가 두 문서에 있지 않으므로 묶음 안에서는 ID만 쓰고, 어느 문서에 있는지는 `workout-common.md` 부록 B(ID 색인)에서 찾는다. 다른 문서(auth, workout-media, workout-stats)의 ID는 문서 이름을 붙여 쓴다(예: workout-media REQ-MEDIA-001).
 - 대상 독자: 백엔드 개발자, 모바일 클라이언트 개발자, 테스트 담당자, 기획자.
 
 ### 1.2 서비스 / 기능 개요
@@ -77,17 +79,20 @@ workout-common 2장을 따른다. 운동 목록 조회는 로그인한 사용자
   - 홈에서 부위를 고름 (진행 중인 세션이 없어도 된다)
 - 사용자 행동:
   - 종목 선택
+  - 종목 관리 (EX-004, workout-exercise-manage)
   - 홈으로 돌아가기
 - 시스템 동작:
-  - 고른 부위의 종목 목록을 서비스가 정한 순서로 조회한다.
+  - 고른 부위에 있는 본인 목록의 종목을 목록 순서대로 조회한다. (BR-022)
   - 종목마다 이 사용자가 마지막으로 수행한 날을 조회한다. 완료된 세션에서 그 종목의 세트를 1개 이상 기록한 날만 수행한 날로 센다. 세트 없이 추가만 한 종목은 수행하지 않은 것이다.
 - 화면 데이터:
   - 부위명
   - 종목 ID, 종목명, 영문 종목명
   - 최근 수행일 (해당 사용자 기준, 오늘로부터 며칠 전인지로 보여준다. 기록이 없으면 "기록 없음")
+  - 고른 부위에 종목이 없을 때의 빈 상태 (BR-030)
   - 종목 이미지와 운동 검색은 없다(TODO-018, TODO-017 결정).
 - 다음 화면:
   - 운동 기록 화면 (EX-002)
+  - 종목 관리 (EX-004)
 - 관련 요구사항: REQ-EXERCISE-001
 
 #### EX-002 운동 기록
@@ -322,7 +327,7 @@ workout-common 2장을 따른다. 운동 목록 조회는 로그인한 사용자
 ---
 
 ## 05. 데이터 요구사항
-workout-common 5장을 따른다. 이 문서의 기능은 DATA-002(운동), DATA-003(세션 내 운동), DATA-004(세트), DATA-006(운동 카테고리)을 다룬다. 초기 운동 목록은 workout-common 부록 A에 있다.
+workout-common 5장을 따른다. 이 문서의 기능은 DATA-002(운동), DATA-003(세션 내 운동), DATA-004(세트), DATA-006(운동 카테고리)을 다룬다. 초기 운동 목록은 workout-common 부록 A에 있고, 사용자마다 이 목록으로 시작한다(BR-022). 종목 추가·수정·삭제는 `workout-exercise-manage.md`에 있다.
 
 ---
 
