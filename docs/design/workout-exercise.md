@@ -1,9 +1,9 @@
 # 운동 선택·세트 기록 설계 문서
 
-- 문서 버전: v0.9
+- 문서 버전: v0.10
 - 작성일: 2026-10-05
 - 상태: 초안
-- 요구사항: `docs/requirements/workout-exercise.md` (v0.8), 공통 `docs/requirements/workout-common.md` (v0.7)
+- 요구사항: `docs/requirements/workout-exercise.md` (v0.9), 공통 `docs/requirements/workout-common.md` (v0.9)
 - 공통 설계: `docs/design/architecture.md`, `docs/design/workout-common.md`
 - Figma: 3행 `exercise-list`(4:77), `workout-recording`(4:164), `이전 기록 덮어쓰기 확인`(83:201), `workout-recording-prev-loaded`(15:6), `today-workout-popup`(30:10)
 - 운동 기록 설계 묶음 (설계 ID와 요구사항 ID를 함께 쓴다, 색인은 `workout-common.md` 부록 D):
@@ -11,10 +11,12 @@
   - `workout-session.md` 홈·운동 진행 (Figma 2행)
   - `workout-exercise.md` 운동 선택·세트 기록 (Figma 3행)
   - `workout-history.md` 운동 기록 달력 (Figma 4행)
+  - `workout-exercise-manage.md` 운동 종목 관리 (Figma 6행)
 - 변경 이력:
   - v0.2 ~ v0.7: `workout-common.md` 변경 이력 참고 (분리 전 `workout-record.md`)
   - v0.8 (2026-10-09) — `workout-record.md` 설계 v0.7을 요구사항 분리(v0.7)에 맞춰 `workout-common.md`, `workout-session.md`, `workout-exercise.md`, `workout-history.md`로 나눔. 설계 ID와 내용은 바꾸지 않았다
   - v0.9 (2026-10-09) — 요구사항 v0.8 반영. API-EXERCISE-001 최근 수행일은 세트가 1개 이상인 세션 운동만 센다(DEC-WORKOUT-012)
+  - v0.10 (2026-10-10) — 요구사항 v0.9(종목 관리) 반영. 종목이 사용자 소유가 되어 API-EXERCISE-001·004는 본인 종목만, API-EXERCISE-002·API-SET-004는 소유자 확인(403). `nameEn`·`target`은 null일 수 있다. EX-001에 종목 관리 진입과 빈 상태 (workout-exercise-manage 4.3)
 
 ---
 
@@ -95,19 +97,19 @@ workout-common 2장을 따른다.
 
 #### REQ-EXERCISE-001 부위 목록 (API-EXERCISE-004)
 1. (A).
-2. 조회 저장소에서 한 쿼리로 `exercise_category`를 `sort_order` 순으로 조회하고, 부위별 `exercise` 개수를 붙인다.
+2. 조회 저장소에서 한 쿼리로 `exercise_category`를 `sort_order` 순으로 조회하고, 부위별로 `user_id = userId`인 `exercise` 개수를 붙인다(0일 수 있다, BR-030).
 3. 200과 부위 목록.
 
 #### REQ-EXERCISE-001 부위의 운동 목록 (API-EXERCISE-001)
 1. (A), (B).
 2. `categoryId`(필수, UUID)를 검증한다. 없거나 형식이 틀리면 400. 없는 부위면 404 `EXERCISE_CATEGORY_NOT_FOUND`.
-3. 조회 저장소에서 한 쿼리로 그 부위의 `exercise`를 `sort_order` 순으로 조회하고, 사용자의 **완료된** 세션에서 세트를 1개 이상 기록한 운동별 가장 최근 `performed_date`를 붙인다 (DEC-WORKOUT-012). 세트 없이 추가만 한 운동은 세지 않는다.
+3. 조회 저장소에서 한 쿼리로 그 부위의 본인 `exercise`(`user_id = userId`, BR-022)를 `sort_order`, `created_at`, `id` 순(DEC-WORKOUT-025)으로 조회하고, 사용자의 **완료된** 세션에서 세트를 1개 이상 기록한 운동별 가장 최근 `performed_date`를 붙인다 (DEC-WORKOUT-012). 세트 없이 추가만 한 운동은 세지 않는다.
 4. 200과 운동 목록(페이지 없음, DEC-WORKOUT-011). 운동 검색은 하지 않는다(요구사항 TODO-017).
 
 #### REQ-EXERCISE-001 세션에 운동 추가 (API-EXERCISE-002)
 1. (A), (B), (E).
 2. 본문 `exerciseId` 필수 검증. 위반 시 400 (ERR-010).
-3. `exercise`가 없으면 404 `EXERCISE_NOT_FOUND` (BR-009, ERR-002).
+3. `exercise`가 없으면 404 `EXERCISE_NOT_FOUND` (ERR-002). 다른 사용자의 종목이면 403 `FORBIDDEN` (BR-009, ERR-003).
 4. 이 세션에 같은 운동이 이미 있으면 새로 만들지 않고 그 세션 운동을 200으로 돌려준다(요구사항 REQ-EXERCISE-001 "다시 추가하지 않고", DEC-WORKOUT-018).
 5. 없으면 `workout_session_exercise`를 저장한다. 순서는 추가한 시각(`created_at`)으로 정해진다 (DEC-WORKOUT-002). 201과 추가된 세션 운동(세트 없음).
 6. 세션 변경 잠금 안이라 같은 운동을 동시에 추가해도 하나만 생긴다. 유일 제약 `ux_workout_session_exercise_session_exercise`가 마지막 보장이다.
@@ -140,7 +142,7 @@ workout-common 2장을 따른다.
 
 #### REQ-SET-005 이전 기록 조회 (API-SET-004)
 1. (A), (B).
-2. 경로의 `exerciseId`가 없는 운동이면 404 `EXERCISE_NOT_FOUND`.
+2. 경로의 `exerciseId`가 없는 운동이면 404 `EXERCISE_NOT_FOUND`, 다른 사용자의 종목이면 403 `FORBIDDEN` (BR-022, ERR-003).
 3. 조회 저장소에서 한 쿼리로, 사용자의 **완료된** 세션 중 이 운동이 있는 가장 최근 세션(`performed_date` 내림차순, `started_at` 내림차순, `id` 내림차순)을 고르고, 그 세션에서 이 운동의 세트를 추가 순서로 가져온다 (BR-016). 진행 중인 세션은 대상이 아니다.
 4. 있으면 200과 그 세션의 수행 날짜, 세트(세트 번호, 중량, 반복 횟수). 없으면 204 (ERR-013 — 오류가 아니라 "없음"으로 알린다, DEC-WORKOUT-021).
 - 이 API는 아무것도 바꾸지 않는다. 불러온 값은 앱 화면에만 있고, 사용자가 값을 누를 때마다 앱이 API-SET-001로 세트를 추가한다 (BR-017, DEC-WORKOUT-022).
@@ -172,7 +174,7 @@ workout-common 3.4를 따른다.
 
 ### 3.6 기능 간 의존관계
 - 세트 추가(REQ-SET-001)는 세션 운동(REQ-EXERCISE-001)이 있어야 한다.
-- 세션 운동 추가는 운동 목록(`exercise`) 데이터가 있어야 한다. 초기 목록은 스키마 변경 2가 넣는다(workout-common 6.5).
+- 세션 운동 추가는 그 사용자의 종목(`exercise`)이 있어야 한다. 기본 목록은 계정을 만들 때 DB 자동 동작이 복사한다(workout-exercise-manage 6.2).
 - 공통 의존관계는 workout-common 3.6에 있다.
 
 ---
@@ -183,6 +185,7 @@ workout-common 3.4를 따른다.
 | 화면 ID | 화면 | 사용자 행동 | API |
 |--------|-----|-----------|-----|
 | EX-001 | 운동 선택 | 진입 | API-EXERCISE-001 `GET /api/v1/exercises?categoryId=` |
+| EX-001 | 운동 선택 | "종목 관리" | (이동만) EX-004 (workout-exercise-manage 4.2) |
 | EX-001 | 운동 선택 | 종목 선택 | (세션 없으면 API-WORKOUT-001) → API-EXERCISE-002 `POST /api/v1/workout-sessions/{sessionId}/exercises` |
 | EX-002 | 운동 기록 | 진입 | API-WORKOUT-002 (그 종목의 `exercises[]` 항목) |
 | EX-002 | 운동 기록 | 세트 추가 / 수정 / 삭제, 종목 빼기 | API-SET-001 / 002 / 003, API-EXERCISE-003 |
@@ -196,19 +199,19 @@ workout-common 3.4를 따른다.
 
 #### EX-001 운동 선택 (Figma `exercise-list`)
 - 진입 조건: 홈에서 부위 카드 선택 (`categoryId`, 부위명). 진행 중 세션이 없어도 된다(BR-019)
-- 필요 데이터: API-EXERCISE-001 → `name`, `nameEn`, `lastPerformedDate`(앱이 "최근 3일 전 완료" / "기록 없음"으로 바꾼다)
-- 사용자 입력: 종목 선택
+- 필요 데이터: API-EXERCISE-001 → `name`, `nameEn`(null이면 비움), `lastPerformedDate`(앱이 "최근 3일 전 완료" / "기록 없음"으로 바꾼다)
+- 사용자 입력: 종목 선택, "종목 관리"(EX-004로 이동, 돌아오면 API-EXERCISE-001 다시 조회)
 - API 호출: 진입 시 API-EXERCISE-001. 종목 선택 시 진행 중 세션이 없으면 API-WORKOUT-001(시작) 뒤 API-EXERCISE-002, 있으면 바로 API-EXERCISE-002
 - 성공 처리: 201·200 → 응답의 `sessionExerciseId`로 EX-002 (200이면 이미 있던 종목, DEC-WORKOUT-018)
 - 실패 처리: 시작 409 → API-WORKOUT-002로 세션 ID를 얻어 추가(DEC-WORKOUT-017) / 추가 409 `WORKOUT_SESSION_NOT_EDITABLE`(6시간 경과로 자동 완료) → 안내 후 홈 / 404 `EXERCISE_CATEGORY_NOT_FOUND` → 홈
 - 로딩 상태: 목록 조회 중 표시, 종목을 누른 뒤 응답까지 다른 종목 선택 막기
-- 빈 상태: 해당 없음(부위마다 종목이 있다)
+- 빈 상태: 고른 부위에 본인 종목이 없음(BR-030) → "종목이 없어요"와 "종목 관리" 안내 (v0.10)
 - 문구: 부제 "…추천 루틴"은 쓰지 않는다(요구사항 TODO-023). 디자인에서 바꾼다
 
 #### EX-002 운동 기록 (Figma `workout-recording`, `이전 기록 덮어쓰기 확인`, `workout-recording-prev-loaded`)
 - 진입 조건: EX-001에서 종목 선택 (`sessionExerciseId`, `exerciseId`)
 - 필요 데이터:
-  - 머리글: API-WORKOUT-002의 그 종목 항목 → `name`, `category.name`, `target`
+  - 머리글: API-WORKOUT-002의 그 종목 항목 → `name`, `category.name`, `target`(null이면 숨김, BR-028)
   - 기록 중·경과 시간: `startedAt`부터 앱이 계산
   - 세트 표: `sets[]`의 `setNumber`, `createdAt`(현지 시각 "14:23"), `weight`, `repetitions`
   - 이전 기록 버튼: API-SET-004 → 200이면 "이전 기록 불러오기", 204면 "이전 기록 없음"(비활성)
@@ -276,6 +279,7 @@ Response `200 OK`
   { "id": "0199a0f0-1a21-7c55-9d14-5e7f9a1b3d02", "name": "등", "imageUrl": "/images/exercise-categories/back.jpg", "exerciseCount": 6 }
 ]
 ```
+- `exerciseCount`: 이 사용자의 그 부위 종목 수. 0일 수 있다 (v0.10, BR-022, BR-030).
 - 정렬: `exercise_category.sort_order`. 페이지 없음(4개).
 - `imageUrl`: 공개 정적 파일의 URL 경로. 앱은 API 주소에 붙여 불러온다.
 
@@ -298,7 +302,9 @@ Response `200 OK`
   { "id": "0199a0f1-2b30-7c55-8d14-5e7f9a1b3d24", "name": "벤치프레스", "nameEn": "Bench Press", "target": "가슴 중부 타겟", "lastPerformedDate": "2026-09-24" }
 ]
 ```
-- 정렬: `exercise.sort_order`(요구사항 부록 A의 순서). 페이지 없음 (DEC-WORKOUT-011).
+- 대상: 본인 종목만 (v0.10, BR-022).
+- 정렬: `exercise.sort_order`, 같으면 `created_at`, `id` (DEC-WORKOUT-025). 처음에는 요구사항 부록 A의 순서다. 페이지 없음 (DEC-WORKOUT-011).
+- `nameEn`, `target`: null일 수 있다(추가한 종목, 부위를 바꾼 종목, BR-023, BR-028) (v0.10).
 - `lastPerformedDate`: 사용자의 완료된 세션에서 세트를 1개 이상 기록한 날 기준, 한 번도 안 했으면 null (DEC-WORKOUT-012). 앱이 "최근 3일 전 완료" / "기록 없음"으로 바꿔 보여준다.
 - v0.5의 `keyword`, `category`(문자열), `imageUrl`은 없앤다.
 
@@ -339,6 +345,7 @@ Errors
 | 401 | UNAUTHORIZED | 인증 없음 | ERR-001 |
 | 403 | FORBIDDEN | 다른 사용자의 세션 | ERR-003 |
 | 404 | WORKOUT_SESSION_NOT_FOUND | 세션 없음 | ERR-009 |
+| 403 | FORBIDDEN | 다른 사용자의 종목 (v0.10) | ERR-003 |
 | 404 | EXERCISE_NOT_FOUND | 운동 없음 | ERR-002 |
 | 409 | WORKOUT_SESSION_NOT_EDITABLE | 완료된 세션 | ERR-007 |
 
@@ -407,6 +414,7 @@ Errors
 | HTTP | 에러 코드 | 조건 | 관련 |
 |------|----------|-----|-----|
 | 401 | UNAUTHORIZED | 인증 없음 | ERR-001 |
+| 403 | FORBIDDEN | 다른 사용자의 종목 (v0.10) | ERR-003 |
 | 404 | EXERCISE_NOT_FOUND | 없는 운동 | ERR-002 |
 
 #### API-SET-005 종목의 세트 모두 삭제
@@ -448,7 +456,7 @@ workout-common 8.1을 따른다.
 ### 8.2 이 기능의 에러 코드
 | 요구사항 ERR | 에러 코드 | HTTP | 메시지 | 발생 위치 |
 |-------------|----------|------|-------|----------|
-| ERR-002 | EXERCISE_NOT_FOUND | 404 | 운동을 찾을 수 없습니다. | WorkoutSessionService.addExercise |
+| ERR-002 | EXERCISE_NOT_FOUND | 404 | 운동을 찾을 수 없습니다. | WorkoutSessionService.addExercise, API-SET-004, ExerciseService(workout-exercise-manage) |
 | ERR-005 | VALIDATION_FAILED (공통) | 400 | 입력값이 올바르지 않습니다. (`errors[]`에 필드별 사유) | 요청 검증 |
 | ERR-010 | VALIDATION_FAILED (공통) | 400 | 입력값이 올바르지 않습니다. | 요청 검증, 시간대 헤더 해석 |
 | ERR-013 | (에러 코드 없음) | 204 | — | API-SET-004: 이전 기록이 없음을 내용 없음으로 알린다 (DEC-WORKOUT-021) |

@@ -11,6 +11,7 @@
   - `workout-session.md` 홈·운동 진행 (Figma 2행)
   - `workout-exercise.md` 운동 선택·세트 기록 (Figma 3행)
   - `workout-history.md` 운동 기록 달력 (Figma 4행)
+  - `workout-exercise-manage.md` 운동 종목 관리 (Figma 6행)
 - 변경 이력:
   - v0.2 ~ v0.7: `workout-common.md` 변경 이력 참고 (분리 전 `workout-record.md`)
   - v0.8 (2026-10-09) — `workout-record.md` 설계 v0.7을 요구사항 분리(v0.7)에 맞춰 `workout-common.md`, `workout-session.md`, `workout-exercise.md`, `workout-history.md`로 나눔. 설계 ID와 내용은 바꾸지 않았다
@@ -274,7 +275,7 @@ URL·필드·날짜·페이지 규칙은 공통 설계 5장을 따른다. 운동
 | `status` | `IN_PROGRESS` / `COMPLETED` | DATA-001 |
 | `endedAt` | 진행 중이면 null | DATA-001 |
 | `exercises` | 추가한 순서. 세트가 없는 운동도 들어간다(EX-002). 홈·오늘 한 운동은 `setCount` > 0만 보여준다 | REQ-EXERCISE-001, REQ-WORKOUT-009 |
-| `exercises[].nameEn`, `target` | 영문명, 타깃 설명 (EX-002 머리글) | DATA-002 |
+| `exercises[].nameEn`, `target` | 영문명, 타깃 설명 (EX-002 머리글). 둘 다 null일 수 있다. 이름·부위는 지금 종목 값이다 (workout-exercise-manage 4.3) | DATA-002, BR-024, BR-028 |
 | `exercises[].sets` | 추가한 순서, `setNumber`는 1부터 연속, `createdAt`은 추가 시각(EX-002 세트 시각) | BR-007, DATA-004 |
 | `exercises[].volume` | Σ(중량 × 반복 횟수), 소수 둘째 자리 | BR-015 |
 | `exercises[].firstSetAt` | 첫 세트의 추가 시각(EX-003). 세트가 없으면 null | REQ-WORKOUT-009 |

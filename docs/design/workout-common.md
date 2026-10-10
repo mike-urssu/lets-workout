@@ -1,16 +1,17 @@
 # 운동 기록 공통 설계 문서
 
-- 문서 버전: v0.8
+- 문서 버전: v0.10
 - 작성일: 2026-10-05
 - 상태: 초안
-- 요구사항: `docs/requirements/workout-common.md` (v0.7)
-- 공통 설계: `docs/design/architecture.md` (v0.13)
+- 요구사항: `docs/requirements/workout-common.md` (v0.11)
+- 공통 설계: `docs/design/architecture.md` (v0.14)
 - 관련 설계: `docs/design/auth.md` (인증 필터, users, 홈의 로그아웃), `docs/design/workout-media.md` (운동 완료 시 사진·동영상)
 - 운동 기록 설계 묶음 (설계 ID와 요구사항 ID를 함께 쓴다, 색인은 `workout-common.md` 부록 D):
   - `workout-common.md` 공통 — 아키텍처, 세션 API 공통 앞단, 상태, 데이터, 보안, 에러, 비기능, 컴포넌트
   - `workout-session.md` 홈·운동 진행 (Figma 2행)
   - `workout-exercise.md` 운동 선택·세트 기록 (Figma 3행)
   - `workout-history.md` 운동 기록 달력 (Figma 4행)
+  - `workout-exercise-manage.md` 운동 종목 관리 (Figma 6행)
 - 변경 이력 (v0.7까지는 분리 전 `workout-record.md` 설계의 이력):
   - v0.2 — 기술 중립 용어로 다시 씀. 기술 대응은 공통 설계 10.1을 따른다
   - v0.3 — 모든 PK를 UUIDv7로 변경(공통 DEC-ARCH-010). 세트·운동 순서와 목록 정렬을 ID 대신 시각 컬럼 기준으로 변경
@@ -24,22 +25,24 @@
   - v0.7 (2026-10-09) — Figma 3·4행 설계(D-TODO-WORKOUT-004 결정): 이전 기록 조회(API-SET-004)와 종목 세트 모두 삭제(API-SET-005), 월별 운동 달력(API-WORKOUT-007), 날짜별 기록(API-WORKOUT-008), 날짜 단위 삭제(API-WORKOUT-009), 화면 EX-001 ~ EX-003·WO-003 연계. v0.6 설계는 코드에 반영됨(공통 v0.9, workout-media v0.1과 함께)
 
   - v0.8 (2026-10-09) — `workout-record.md` 설계 v0.7을 요구사항 분리(v0.7)에 맞춰 `workout-common.md`, `workout-session.md`, `workout-exercise.md`, `workout-history.md`로 나눔. 설계 ID와 내용은 바꾸지 않았다
+  - v0.9 (2026-10-10) — 요구사항 v0.9(종목 관리) 반영. 종목을 사용자 소유로: `exercise` → `default_exercise`(템플릿), 사용자 소유 `exercise` 신규, 세션 운동의 종목 참조를 함께 삭제로, 새 계정에 기본 목록 복사(DEC-WORKOUT-023 ~ 028, 스키마 변경 5). API-EXERCISE-005 ~ 007 추가(`workout-exercise-manage.md`)
+  - v0.10 (2026-10-10) — 요구사항 v0.11(종목 순서 변경) 반영. API-EXERCISE-008 추가(workout-exercise-manage v0.2)
 
 ---
 
 ## 1. 설계 개요
 
 ### 1.1 목적
-운동 기록 기능(홈·운동 진행, 운동 선택·세트 기록, 운동 기록 달력)이 함께 쓰는 설계를 한곳에 둔다: 컴포넌트와 요청 흐름, 세션 API의 공통 앞단, 세션 상태, 테이블 5개, 보안, 에러 코드, 비기능 대응, 설계 결정. 기능별 처리 흐름·화면 연계·API 상세는 workout-session, workout-exercise, workout-history에 있다. 운동 기록 API는 모두 16개다(5.1).
+운동 기록 기능(홈·운동 진행, 운동 선택·세트 기록, 운동 기록 달력)이 함께 쓰는 설계를 한곳에 둔다: 컴포넌트와 요청 흐름, 세션 API의 공통 앞단, 세션 상태, 테이블 6개, 보안, 에러 코드, 비기능 대응, 설계 결정. 기능별 처리 흐름·화면 연계·API 상세는 workout-session, workout-exercise, workout-history, workout-exercise-manage에 있다. 운동 기록 API는 모두 20개다(5.1).
 
 ### 1.2 설계 범위
-- **포함:** 요구사항 workout-common의 공통 규칙(BR-001, 002, 004, 008, 009, 010, 011, 015), 공통 예외(ERR-001, 003, 007, 009), DATA-001 ~ 006, NFR 전부
+- **포함:** 요구사항 workout-common의 공통 규칙(BR-001, 002, 004, 008, 009, 010, 011, 015, 022), 공통 예외(ERR-001, 003, 007, 009), DATA-001 ~ 006, NFR 전부
 - **보류:** 없음
 - **제외:** 요구사항 8.1의 범위 밖 항목. 폐기된 요구사항 REQ-SET-004, REQ-WORKOUT-003, REQ-WORKOUT-004, BR-006, BR-014, ERR-006, IF-SET-002, IF-WORKOUT-004, IF-WORKOUT-005, 화면 WO-004는 설계하지 않는다.
 
 ### 1.3 대상 시스템
 - Backend API: 도메인 `exercise`(부위·운동 목록), `session`(운동 세션·세션 운동·세트)
-- Database: `exercise_category`(신규), `exercise`, `workout_session`, `workout_session_exercise`, `workout_set` (+ workout-media의 `workout_media`)
+- Database: `exercise_category`, `default_exercise`(v0.9: 지금의 `exercise`를 이름 변경), `exercise`(v0.9: 사용자 소유), `workout_session`, `workout_session_exercise`, `workout_set` (+ workout-media의 `workout_media`)
 - Mobile App: 화면 WO-001, WO-002(이 문서에서 상세), EX-001 ~ EX-003(유지·매핑만)
 
 ### 1.4 기술 스택
@@ -65,10 +68,11 @@
 | BR-002 | 완료된 세션 수정 불가 | 3.4, 3.5, WORKOUT_SESSION_NOT_EDITABLE | | |
 | BR-004 | 수행 날짜 = 시작 시각의 현지 날짜 | 3.2, 3.5, API-WORKOUT-001 `X-Time-Zone` | | |
 | BR-008 | 종료 시각 ≥ 시작 시각 | 3.5, ck_workout_session_ended | | |
-| BR-009 | 제공 목록의 운동만 추가 | 3.5, 참조 workout_session_exercise.exercise_id | | |
+| BR-009 | 본인 목록의 종목만 추가 (v0.9) | 3.5, 참조 workout_session_exercise.exercise_id, workout-exercise-manage 7.2 | | |
 | BR-010 | 요약은 모든 세트로 계산 | 3.5, DEC-WORKOUT-003, 5.2 summary | | |
 | BR-011 | 진행 중 세션은 하나 | 3.5, ux_workout_session_user_in_progress | | |
 | BR-015 | 부위별·종목별 볼륨·세트 수 | 3.5, 5.2 `exercises[].volume`, `categories[]` | | |
+| BR-022 | 종목 목록은 사용자마다 | workout-exercise-manage 3.5, exercise.user_id, trg_users_default_exercises | | |
 | ERR-001 | 비로그인 요청 | 8.2 UNAUTHORIZED | | |
 | ERR-003 | 다른 사용자 데이터 접근 | 7.2, 8.2 FORBIDDEN | | |
 | ERR-007 | 완료된 세션 변경 | 8.2 WORKOUT_SESSION_NOT_EDITABLE | | |
@@ -81,9 +85,10 @@
 | NFR-AVAIL-001 | 오류 반환, 부분 저장 없음 | 9장, 3.2 트랜잭션 | | |
 | NFR-INTEG-001 | 없는 사용자의 기록 생성 불가 | 6.2 참조 workout_session.user_id | | |
 | NFR-INTEG-002 | 삭제 시 하위 데이터 남지 않음 | 6.4 참조(함께 삭제), workout-media 6.4 | | |
+| NFR-INTEG-003 | 종목 삭제 시 기록 남지 않음 | 6.4, 참조(함께 삭제) workout_session_exercise.exercise_id | | |
 | NFR-LOG-001 | 주요 행위·자동 처리·오류 추적 | 9장 로그 이벤트 | | |
 | DATA-001 | 운동 세션 | 6.2 workout_session | | |
-| DATA-002 | 운동(종목) | 6.2 exercise, 6.5 초기 목록 | | |
+| DATA-002 | 운동(종목) | 6.2 exercise·default_exercise (workout-exercise-manage 6.2), 6.5 초기 목록·스키마 변경 5 | | |
 | DATA-003 | 세션 내 운동 | 6.2 workout_session_exercise | | |
 | DATA-004 | 세트 | 6.2 workout_set | | |
 | DATA-005 | 세션 요약 | DEC-WORKOUT-003, 5.2 summary·categories | | |
@@ -126,11 +131,12 @@
 | workout-session | REQ-WORKOUT-001, 002, 006, 009, 010 | API-WORKOUT-001, 002, 003, 006 |
 | workout-exercise | REQ-EXERCISE-001, 002, REQ-SET-001 ~ 003, 005 | API-EXERCISE-001 ~ 004, API-SET-001 ~ 005 |
 | workout-history | REQ-WORKOUT-005, 007, 008 | API-WORKOUT-007, 008, 009 |
+| workout-exercise-manage | REQ-EXERCISE-003 ~ 007 | API-EXERCISE-005 ~ 008 (+ API-EXERCISE-001, 004 재사용) |
 
 ### 3.2 기능별 처리 흐름 — 공통 앞단
 모든 흐름의 공통 앞단:
 - (A) 인증 필터에서 userId를 얻는다. 없거나 잘못되면 401 `UNAUTHORIZED` (ERR-001).
-- (B) `ExpiredSessionCleaner.cleanUp(userId)` 실행 (REQ-WORKOUT-006 흐름 참고). 운동 목록 조회(API-EXERCISE-001)도 최근 수행일이 정리 결과를 반영하도록 실행한다. 부위 목록(API-EXERCISE-004)은 세션과 관계없으므로 실행하지 않는다.
+- (B) `ExpiredSessionCleaner.cleanUp(userId)` 실행 (REQ-WORKOUT-006 흐름 참고). 운동 목록 조회(API-EXERCISE-001)도 최근 수행일이 정리 결과를 반영하도록 실행한다. 종목 삭제(API-EXERCISE-007)도 세션을 지우므로 실행한다. 부위 목록(API-EXERCISE-004)과 종목 추가·수정(API-EXERCISE-005, 006)은 세션과 관계없으므로 실행하지 않는다.
 
 **편집 가능 세션 확보** (운동·세트 변경, 완료, 취소에서 공통으로 쓰는 단계, 이하 "(E)"):
 1. 세션을 **변경 잠금**으로 조회한다. 없으면 404 `WORKOUT_SESSION_NOT_FOUND` (ERR-009).
@@ -168,17 +174,17 @@
 | BR ID | 규칙 | 강제 위치 | 방법 | 위반 시 |
 |-------|-----|----------|-----|--------|
 | BR-001 | 본인 기록만 | 서비스, 조회 조건 | 단건: 조회 후 `user_id` 비교 / 목록·집계: 조회 조건에 `user_id = userId` | 403 FORBIDDEN |
-| BR-002 | 완료된 세션 수정 불가 | 서비스 (E) | 세션 변경 잠금 후 상태 확인 | 409 WORKOUT_SESSION_NOT_EDITABLE |
+| BR-002 | 완료된 세션 수정 불가 | 서비스 (E) | 세션 변경 잠금 후 상태 확인. 예외: 종목 삭제는 완료된 세션의 그 종목 기록도 지운다(workout-exercise-manage 3.2, BR-025) | 409 WORKOUT_SESSION_NOT_EDITABLE |
 | BR-004 | 수행 날짜 = 시작 시각의 현지 날짜 | 서비스 | `X-Time-Zone`으로 `started_at`의 날짜 계산, 입력으로 받지 않음 | 헤더 오류 시 400 |
 | BR-008 | 종료 ≥ 시작 | 서비스, DB | 종료 시각은 항상 현재 시각 또는 시작 이후 추가된 세트 시각, 조건 검사 `ck_workout_session_ended` | 정상 흐름에서 발생 불가 → 500 |
-| BR-009 | 제공 목록의 운동만 | 서비스, DB | `exercise` 존재 확인 + 참조(삭제 금지) `exercise_id → exercise.id`. 운동·부위는 스키마 변경 스크립트로만 넣는다 | 404 EXERCISE_NOT_FOUND |
+| BR-009 | 본인 목록의 종목만 (v0.9) | 서비스, DB | `exercise` 존재·소유자 확인 + 참조 `exercise_id → exercise.id` | 404 EXERCISE_NOT_FOUND / 403 FORBIDDEN |
 | BR-010 | 요약은 모든 세트로 | 조회 계산 | 현황 조회 결과로 합계 계산 (DEC-WORKOUT-003) | — |
 | BR-011 | 진행 중 세션 하나 | 서비스, DB | 시작 전 조회 + 조건부 유일 `ux_workout_session_user_in_progress`, 위반을 제약 위반 변환으로 409 | 409 WORKOUT_SESSION_ALREADY_IN_PROGRESS |
 | BR-015 | 부위별·종목별 볼륨·세트 수 | 조회 계산 | workout-session 3.2 REQ-WORKOUT-009의 4. BR-010과 같은 세트로 계산 | — |
 
 ### 3.6 기능 간 의존관계
 - 세트 추가(REQ-SET-001)는 세션 운동(REQ-EXERCISE-001)이 있어야 한다.
-- 세션 운동 추가는 운동 목록(`exercise`) 데이터가 있어야 한다. 초기 목록은 스키마 변경 2가 넣는다(6.5).
+- 세션 운동 추가는 그 사용자의 종목(`exercise`)이 있어야 한다. 기본 목록은 계정을 만들 때 DB 자동 동작이 복사한다(workout-exercise-manage 6.2, DEC-WORKOUT-023).
 - 완료(REQ-WORKOUT-002)와 시작의 응답은 현황 조회(REQ-WORKOUT-009)와 같은 형태를 재사용한다.
 - 완료의 사진·동영상(`mediaIds`)과 취소·정리의 파일 삭제는 workout-media 설계에 의존한다.
 - 모든 세션 API와 운동 목록·이전 기록·달력·날짜별 기록 API는 ExpiredSessionCleaner(REQ-WORKOUT-006)에 의존한다(6시간 지난 세션이 정리된 결과를 보여야 한다).
@@ -215,11 +221,15 @@ URL·필드·날짜·페이지 규칙은 공통 설계 5장을 따른다. API �
 | API-WORKOUT-007 | GET | /api/v1/workout-days?month=YYYY-MM | 필요 | 월별 운동한 날과 부위 | REQ-WORKOUT-007, IF-WORKOUT-007 |
 | API-WORKOUT-008 | GET | /api/v1/workout-days/{date} | 필요 | 날짜별 운동 기록 | REQ-WORKOUT-008, IF-WORKOUT-008 |
 | API-WORKOUT-009 | DELETE | /api/v1/workout-days/{date} | 필요 | 그날 완료된 기록 삭제 | REQ-WORKOUT-005, IF-WORKOUT-006 |
+| API-EXERCISE-005 | POST | /api/v1/exercises | 필요 | 종목 추가 (v0.9) | REQ-EXERCISE-004, IF-EXERCISE-004 |
+| API-EXERCISE-006 | PUT | /api/v1/exercises/{exerciseId} | 필요 | 종목 수정 (v0.9) | REQ-EXERCISE-005, IF-EXERCISE-004 |
+| API-EXERCISE-007 | DELETE | /api/v1/exercises/{exerciseId} | 필요 | 종목과 그 기록 삭제 (v0.9) | REQ-EXERCISE-006, IF-EXERCISE-004 |
+| API-EXERCISE-008 | PUT | /api/v1/exercise-categories/{categoryId}/exercise-order | 필요 | 부위의 종목 순서 변경 (v0.10) | REQ-EXERCISE-007, IF-EXERCISE-005 |
 
-(살아 있는 API 16개)
+(살아 있는 API 20개)
 
 ### 5.2 응답 모델
-WorkoutSessionResponse는 workout-session 5.2, WorkoutSetResponse는 workout-exercise 5.2, WorkoutDayResponse는 workout-history 5.2에 있다.
+WorkoutSessionResponse는 workout-session 5.2, WorkoutSetResponse는 workout-exercise 5.2, WorkoutDayResponse는 workout-history 5.2, ExerciseResponse는 workout-exercise-manage 5.1에 있다.
 
 ### 5.3 API 상세
 해당 없음 — 각 문서 5.3에 있다.
@@ -231,13 +241,16 @@ WorkoutSessionResponse는 workout-session 5.2, WorkoutSetResponse는 workout-exe
 
 ### 6.1 ERD
 ```
-exercise_category 1 ──── N exercise
-                              1
-                              │
-                              N
-users 1 ──── N workout_session 1 ──── N workout_session_exercise 1 ──── N workout_set
-                    1
-                    └──── N workout_media   (workout-media 설계)
+exercise_category 1 ──── N default_exercise   (기본 목록 템플릿, v0.9)
+        1
+        └──── N exercise N ──── 1 users        (사용자 소유, v0.9)
+                   1                 1
+                   │ (함께 삭제)       │
+                   N                 N
+       workout_session_exercise N ──── 1 workout_session
+                   1                 1
+                   N                 └──── N workout_media   (workout-media 설계)
+              workout_set
 ```
 
 ### 6.2 테이블 정의
@@ -256,7 +269,10 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 - 유일 `ux_exercise_category_sort_order`: `sort_order`
 - 사용자는 이 테이블을 바꾸지 않는다(BR-009). 행은 스키마 변경 스크립트로만 넣고 고친다. 수정이 스크립트뿐이라 `updated_at`을 두지 않는다.
 
-#### exercise — 근거: DATA-002 (v0.6 변경: `category`·`image_url` 대신 부위 참조, 영문명·타깃·순서 추가)
+#### exercise — 근거: DATA-002
+**v0.9: 아래 정의는 스키마 변경 4까지의 것이다.** 스키마 변경 5에서 이 테이블은 `default_exercise`(기본 목록 템플릿)로 이름이 바뀌고, 사용자 소유 `exercise`를 새로 만든다. 지금 정의는 workout-exercise-manage 6.2를 따른다.
+
+(v0.6 변경: `category`·`image_url` 대신 부위 참조, 영문명·타깃·순서 추가)
 | 컬럼 | 타입 | Null | 기본값 | 설명 | 근거 |
 |-----|-----|------|-------|-----|-----|
 | id | ID | N | DB 생성 (공통 DEC-ARCH-018) | PK | DEC-ARCH-010 |
@@ -301,7 +317,7 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 
 - PK: `id`
 - 참조(함께 삭제): `workout_session_id → workout_session.id` (NFR-INTEG-002)
-- 참조(삭제 금지): `exercise_id → exercise.id`
+- 참조(함께 삭제): `exercise_id → exercise.id` (v0.9: 삭제 금지에서 변경. 종목을 지우면 그 기록도 지운다, BR-025)
 - 유일 `ux_workout_session_exercise_session_exercise`: `(workout_session_id, exercise_id)` — 한 세션에 같은 운동은 하나 (REQ-EXERCISE-001, DEC-WORKOUT-018)
 - 수정되지 않는 행이라 `updated_at`이 없다.
 
@@ -325,21 +341,24 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 |-------|-------|-----|---------|-----|
 | ux_exercise_category_name | exercise_category | (name), 유일 | 중복 방지 | DATA-006 |
 | ux_exercise_category_sort_order | exercise_category | (sort_order), 유일 | 부위 목록 정렬 | API-EXERCISE-004 |
-| ux_exercise_name | exercise | (name), 유일 | 중복 방지 | DATA-002 |
-| ux_exercise_category_order | exercise | (exercise_category_id, sort_order), 유일 | 부위의 운동 목록 정렬, 부위별 종목 수 | API-EXERCISE-001, API-EXERCISE-004 |
+| ~~ux_exercise_name~~, ~~ux_exercise_category_order~~ | — | — | v0.9: `default_exercise`로 옮겨 이름이 바뀐다 | workout-exercise-manage 6.3 |
+| ux_exercise_user_category_name | exercise | (user_id, exercise_category_id, 소문자(name)), 유일(대소문자 무시) | 같은 이름 확인, 부위의 본인 종목 목록, 부위별 종목 수 | BR-026, API-EXERCISE-001, API-EXERCISE-004 (workout-exercise-manage 6.3) |
+| idx_workout_session_exercise_exercise | workout_session_exercise | (exercise_id) | 종목 삭제 시 함께 삭제할 행 찾기 | REQ-EXERCISE-006 |
 | ux_workout_session_user_in_progress | workout_session | (user_id), 조건부 유일: status = IN_PROGRESS | 진행 중 세션 조회(API-WORKOUT-002), 시작 시 확인, cleanUp 대상 조회 | BR-011, BR-013 |
 | idx_workout_session_user_performed | workout_session | (user_id, performed_date 내림차순, started_at 내림차순, id 내림차순) | 운동별 최근 수행일, 이전 기록(가장 최근 완료 세션), 월별 달력(날짜 범위), 날짜별 기록·삭제(같은 날짜), 가장 늦은 운동한 날 | REQ-EXERCISE-001, REQ-SET-005, REQ-WORKOUT-005, 007, 008, NFR-PERF-002 |
 | ux_workout_session_exercise_session_exercise | workout_session_exercise | (workout_session_id, exercise_id), 유일 | 같은 운동 중복 확인, 세션별 운동 조회, 함께 삭제 | REQ-EXERCISE-001 |
 | idx_workout_session_exercise_session | workout_session_exercise | (workout_session_id, created_at, id) | 세션 현황의 운동을 추가 순서로 조회 | REQ-WORKOUT-009 |
 | idx_workout_set_session_exercise | workout_set | (workout_session_exercise_id, created_at, id) | 운동별 세트를 추가 순서로 조회, 세트 번호 계산, cleanUp의 세트 존재 확인, 함께 삭제 | REQ-WORKOUT-009, BR-013 |
 
-`workout_session_exercise.exercise_id`에는 따로 인덱스를 두지 않는다. 운동별 최근 수행일은 사용자 세션에서 출발한다(idx_workout_session_user_performed → ux_workout_session_exercise_session_exercise). `exercise` 행은 지우지 않으므로 참조 확인용 인덱스도 필요 없다.
+운동별 최근 수행일은 사용자 세션에서 출발한다(idx_workout_session_user_performed → ux_workout_session_exercise_session_exercise). v0.9부터 종목을 지울 수 있어 `workout_session_exercise.exercise_id`에 인덱스를 둔다.
 
 ### 6.4 삭제 정책
 - 요구사항 TODO-001 결정대로 실제 삭제한다. 보관 컬럼(`deleted_at`)은 두지 않는다.
 - `workout_session` 삭제(운동 취소, 방치된 세션 자동 삭제) → `workout_session_exercise` → `workout_set`, 그리고 `workout_media`가 참조(함께 삭제)로 같은 트랜잭션에서 삭제된다 (NFR-INTEG-002). 파일은 커밋 후 작업으로 지운다 (workout-media 6.4).
 - 계정(`users`) 삭제 → 그 사용자의 `workout_session`과 하위 데이터가 모두 참조(함께 삭제)로 삭제된다 (auth BR-012). 파일은 공통 10.7 절차.
-- `exercise`, `exercise_category`는 삭제하지 않는다(사용 중이면 참조(삭제 금지)가 막는다).
+- 종목(`exercise`) 삭제 → 참조(함께 삭제)로 모든 세션의 그 종목 `workout_session_exercise` → `workout_set`. 세트가 남지 않은 완료 세션은 서비스가 지운다(미디어 함께, 파일은 커밋 후). (v0.9, workout-exercise-manage 6.4)
+- 계정 삭제 → `exercise`도 참조(함께 삭제)로 지워진다.
+- `default_exercise`, `exercise_category`는 삭제하지 않는다.
 
 ### 6.5 스키마 변경 목록
 인증 설계의 스키마 변경 1(users, login_session) 다음 순서로 적용한다. 스크립트 파일 규칙은 공통 설계 10.1을 따른다.
@@ -351,6 +370,7 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 | 2 | 운동 부위·종목 생성과 초기 목록 | `exercise_category`, `exercise`(6.2), 6.3의 인덱스. 초기 데이터: 부위 4개(가슴 1, 등 2, 어깨 3, 하체 4, 이미지 `/images/exercise-categories/{chest,back,shoulders,legs}.jpg`)와 요구사항 부록 A의 종목 24개(순서·영문명·타깃 그대로) (요구사항 TODO-014 결정, D-TODO-WORKOUT-001 결정) |
 | 3 | 운동 세션 생성 | `workout_session`(메모 없음), `workout_session_exercise`(중복 금지 유일 제약), `workout_set`과 6.2의 제약, 6.3의 인덱스 |
 | 4 | workout_media 생성 | workout-media 설계 6.5 |
+| 5 | 종목을 사용자 소유로 (v0.9) | `exercise` → `default_exercise`, 사용자 소유 `exercise` 생성, 기존 사용자에게 복사하고 세션 운동을 옮김, 참조를 함께 삭제로, 자동 동작 `trg_users_default_exercises`. 기존 기록을 지우지 않는다 (workout-exercise-manage 6.5, DEC-WORKOUT-028) |
 
 부위 이미지 파일 4개는 공개 정적 파일로 함께 배포한다. 원본은 앱 저장소의 부위 이미지(`assets/images/groups/`)를 쓴다.
 
@@ -359,7 +379,7 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 인증 흐름·토큰·CORS·CSRF는 공통 설계 7장을 따른다.
 
 ### 7.1 API별 인증
-- 5.1의 살아 있는 API 16개는 모두 인증 필요 (NFR-SEC-001).
+- 5.1의 살아 있는 API 20개는 모두 인증 필요 (NFR-SEC-001).
 - 공개 정적 파일 `GET /images/exercise-categories/**`는 인증 없이 허용한다. 부위 이미지만 있고 사용자 데이터가 없다 (DEC-WORKOUT-008). v0.5의 `/images/exercises/**`는 없앤다.
 
 ### 7.2 사용자별 데이터 접근 제한
@@ -367,7 +387,7 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 - 경로의 `sessionId`: 세션 조회 → 없으면 404 → `user_id` 불일치면 403 `FORBIDDEN` (BR-001, ERR-003, DEC-WORKOUT-007).
 - 경로의 `sessionExerciseId`, `setId`: 상위 리소스에 속하는지 확인한다(`workout_session_exercise.workout_session_id = sessionId`, `workout_set.workout_session_exercise_id = sessionExerciseId`). 속하지 않으면 404.
 - 진행 중 세션 현황·운동별 최근 수행일·이전 기록·달력·날짜별 기록·날짜 단위 삭제·cleanUp은 모두 `user_id = userId` 조건을 가진다 (NFR-SEC-002). 날짜로 접근하는 API는 다른 사용자의 기록에 닿을 수 없다.
-- 부위·운동 목록은 모든 사용자에게 같은 기준 데이터다(최근 수행일만 사용자별).
+- 부위 목록은 모든 사용자에게 같은 기준 데이터다. 종목은 사용자 소유다(v0.9): 단건은 소유자 확인(없으면 404, 다르면 403), 목록·집계는 `exercise.user_id = userId` (workout-exercise-manage 7.2).
 
 ### 7.3 민감 데이터 / 로그
 - 로그에는 이벤트 이름, userId, sessionId만 남긴다. 사진·동영상은 workout-media 7.3.
@@ -391,14 +411,14 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 | 요구사항 ERR | 에러 코드 | HTTP | 메시지 | 발생 위치 |
 |-------------|----------|------|-------|----------|
 | ERR-001 | UNAUTHORIZED (공통) | 401 | 로그인이 필요합니다. | 인증 필터 |
-| ERR-003 | FORBIDDEN (공통) | 403 | 접근할 수 없는 데이터입니다. | WorkoutSessionService 소유자 확인 |
+| ERR-003 | FORBIDDEN (공통) | 403 | 접근할 수 없는 데이터입니다. | WorkoutSessionService, ExerciseService 소유자 확인 |
 | ERR-007 | WORKOUT_SESSION_NOT_EDITABLE | 409 | 완료된 운동 기록은 수정할 수 없습니다. | WorkoutSessionService (E) |
 | ERR-009 | WORKOUT_SESSION_NOT_FOUND | 404 | 운동 기록을 찾을 수 없습니다. | WorkoutSessionService (E) |
 | ERR-009 | SESSION_EXERCISE_NOT_FOUND | 404 | 운동 기록에서 해당 운동을 찾을 수 없습니다. | WorkoutSessionService |
 | ERR-009 | WORKOUT_SET_NOT_FOUND | 404 | 세트를 찾을 수 없습니다. | WorkoutSessionService |
 | ERR-009 | EXERCISE_CATEGORY_NOT_FOUND (v0.6 신규) | 404 | 운동 부위를 찾을 수 없습니다. | ExerciseService (API-EXERCISE-001) |
 
-제약 위반 변환 대상: `ux_workout_session_user_in_progress` → 409 `WORKOUT_SESSION_ALREADY_IN_PROGRESS`만 지정한다. `ux_workout_session_exercise_session_exercise`는 세션 변경 잠금 안에서 먼저 확인하므로 정상 흐름에서 위반이 나지 않는다. 그 밖의 DB 제약 위반은 버그이므로 500으로 두고 ERROR 로그를 남긴다(공통 8.4).
+제약 위반 변환 대상: `ux_workout_session_user_in_progress` → 409 `WORKOUT_SESSION_ALREADY_IN_PROGRESS`, `ux_exercise_user_category_name` → 409 `EXERCISE_NAME_DUPLICATED`(v0.9). `ux_workout_session_exercise_session_exercise`는 세션 변경 잠금 안에서 먼저 확인하므로 정상 흐름에서 위반이 나지 않는다. 그 밖의 DB 제약 위반은 버그이므로 500으로 두고 ERROR 로그를 남긴다(공통 8.4).
 
 ---
 
@@ -413,7 +433,8 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 | NFR-AVAIL-001 | 장애 시 오류 반환, 부분 저장 없음 | 요청 하나 = 트랜잭션 하나, 삭제는 참조(함께 삭제)로 한 번에, 파일은 공통 2.6 순서, 오류는 공통 8장 형식 | 강제 예외 시 500 JSON과 데이터 무변경 테스트 |
 | NFR-INTEG-001 | 없는 사용자의 기록 생성 불가 | 참조 `workout_session.user_id → users.id` | 없는 userId로 세션 생성 시 실패 테스트 |
 | NFR-INTEG-002 | 삭제 시 하위 데이터 남지 않음 | 참조(함께 삭제) 3단 + 파일 커밋 후 삭제 | 취소 후 운동·세트·미디어 행 0건, 저장소 파일 없음 테스트 |
-| NFR-LOG-001 | 주요 행위·자동 처리·오류 추적 | INFO 이벤트: `workout_session.started`, `.completed`, `.cancelled`, `.auto_completed`, `.auto_deleted` (userId, sessionId). 처리하지 못한 예외는 ERROR | 로그 출력 확인 테스트 |
+| NFR-INTEG-003 | 종목 삭제 시 기록 남지 않음 | 참조(함께 삭제) `workout_session_exercise.exercise_id` (workout-exercise-manage 9장) | 삭제 후 그 종목의 세션 운동·세트 0건 테스트 |
+| NFR-LOG-001 | 주요 행위·자동 처리·오류 추적 | INFO 이벤트: `workout_session.started`, `.completed`, `.cancelled`, `.auto_completed`, `.auto_deleted`, `.deleted` (userId, sessionId), `exercise.deleted` (userId, exerciseId, deletedSetCount, deletedSessionCount, v0.9). 처리하지 못한 예외는 ERROR | 로그 출력 확인 테스트 |
 
 ---
 ## 10. 구현 구조 및 개발 전략
@@ -423,12 +444,12 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 
 | 도메인 | 컴포넌트 | 역할 | 책임 |
 |-------|---------|-----|-----|
-| exercise | ExerciseController | API 진입점 | API-EXERCISE-001, API-EXERCISE-004, API-SET-004(종목 아래 경로) |
-| exercise | ExerciseService | 서비스 | 부위 존재 확인, 목록 조회 |
-| exercise | ExerciseRepository | 저장소 | 운동 단건·존재 확인 (BR-009) |
-| exercise | ExerciseQueryRepository | 조회 저장소 | 부위 목록 + 종목 수, 부위의 운동 목록 + 사용자별 최근 수행일 |
+| exercise | ExerciseController | API 진입점 | API-EXERCISE-001, API-EXERCISE-004 ~ 007, API-SET-004(종목 아래 경로) |
+| exercise | ExerciseService | 서비스 | 부위 존재 확인, 목록 조회, 종목 추가·수정·삭제와 소유자 확인 (v0.9) |
+| exercise | ExerciseRepository | 저장소 | 종목 단건·존재·소유 확인 (BR-009), 저장·수정·삭제, 변경 잠금 조회, 같은 이름 확인, 최대 순서 (v0.9) |
+| exercise | ExerciseQueryRepository | 조회 저장소 | 부위 목록 + 본인 종목 수, 부위의 본인 종목 + 최근 수행일 |
 | session | WorkoutSessionController | API 진입점 | `/workout-sessions/**` API 10개(세션·운동·세트) |
-| session | WorkoutSessionService | 서비스 | 세션 묶음의 모든 쓰기와 규칙: 소유자·상태 확인, 변경 잠금, 완료 조건, 미디어 붙이기 호출, 취소, 현황 계산 |
+| session | WorkoutSessionService | 서비스 | 세션 묶음의 모든 쓰기와 규칙: 소유자·상태 확인, 변경 잠금, 완료 조건, 미디어 붙이기 호출, 취소, 현황 계산. 종목 삭제용 진행 중 세션 잠금과 빈 완료 세션 삭제 (v0.9) |
 | session | ExpiredSessionCleaner | 서비스 (독립 트랜잭션) | REQ-WORKOUT-006 정리, 정리한 세션의 파일 삭제 등록 |
 | session | WorkoutSessionRepository, WorkoutSessionExerciseRepository, WorkoutSetRepository | 저장소 | 행 저장·수정·삭제, 단건 조회, 세션 변경 잠금 조회 |
 | session | WorkoutSessionQueryRepository | 조회 저장소 | 세션 현황 조회, 이전 기록 조회, cleanUp 조건부 일괄 갱신 |
@@ -484,10 +505,10 @@ users 1 ──── N workout_session 1 ──── N workout_session_exercise
 5. **ERR-003과 2.2의 충돌 가능성:** 2.2는 "다른 사용자의 기록은 존재 여부와 관계없이 볼 수 없다"고 하는데, ERR-003의 403 응답은 그 ID의 기록이 **존재한다는 사실**을 드러낸다. 존재 자체를 숨기려면 다른 사용자의 기록도 404로 응답해야 한다. (설계: ERR-003대로 403. DEC-WORKOUT-007. workout-media 부록 C-1도 같은 문제)
 
 ## 부록 D. ID 색인
-| 종류 | workout-common | workout-session | workout-exercise | workout-history |
-|-----|---------------|-----------------|------------------|-----------------|
-| API | — | API-WORKOUT-001, 002, 003, 006 | API-EXERCISE-001 ~ 004, API-SET-001 ~ 005 | ~~API-WORKOUT-004, 005~~, API-WORKOUT-007, 008, 009 |
-| 응답 모델 | — | WorkoutSessionResponse | WorkoutSetResponse | WorkoutDayResponse |
-| 설계 결정 | DEC-WORKOUT-001 ~ 003, 005 ~ 007, ~~010~~, ~~013~~, 014, 016 | DEC-WORKOUT-004, 015, 017 | DEC-WORKOUT-008, 009, 011, 012, 018, 021, 022 | DEC-WORKOUT-019, 020 |
-| 설계 미결정 | D-TODO-WORKOUT-001 ~ 004 (모두 결정) | — | — | — |
-| 테이블 | 모두 (6장) | — | — | — |
+| 종류 | workout-common | workout-session | workout-exercise | workout-history | workout-exercise-manage |
+|-----|---------------|-----------------|------------------|-----------------|-------------------------|
+| API | — | API-WORKOUT-001, 002, 003, 006 | API-EXERCISE-001 ~ 004, API-SET-001 ~ 005 | ~~API-WORKOUT-004, 005~~, API-WORKOUT-007, 008, 009 | API-EXERCISE-005 ~ 008 |
+| 응답 모델 | — | WorkoutSessionResponse | WorkoutSetResponse | WorkoutDayResponse | ExerciseResponse |
+| 설계 결정 | DEC-WORKOUT-001 ~ 003, 005 ~ 007, ~~010~~, ~~013~~, 014, 016 | DEC-WORKOUT-004, 015, 017 | DEC-WORKOUT-008, 009, 011, 012, 018, 021, 022 | DEC-WORKOUT-019, 020 | DEC-WORKOUT-023 ~ 031 |
+| 설계 미결정 | D-TODO-WORKOUT-001 ~ 004 (모두 결정) | — | — | — | — |
+| 테이블 | 모두 (6장). `exercise`·`default_exercise`의 지금 정의는 workout-exercise-manage 6.2 | — | — | — | default_exercise, exercise |

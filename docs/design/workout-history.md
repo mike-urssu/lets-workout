@@ -11,6 +11,7 @@
   - `workout-session.md` 홈·운동 진행 (Figma 2행)
   - `workout-exercise.md` 운동 선택·세트 기록 (Figma 3행)
   - `workout-history.md` 운동 기록 달력 (Figma 4행)
+  - `workout-exercise-manage.md` 운동 종목 관리 (Figma 6행)
 - 변경 이력:
   - v0.2 ~ v0.7: `workout-common.md` 변경 이력 참고 (분리 전 `workout-record.md`)
   - v0.8 (2026-10-09) — `workout-record.md` 설계 v0.7을 요구사항 분리(v0.7)에 맞춰 `workout-common.md`, `workout-session.md`, `workout-exercise.md`, `workout-history.md`로 나눔. 설계 ID와 내용은 바꾸지 않았다
@@ -193,7 +194,7 @@ URL·필드·날짜·페이지 규칙은 공통 설계 5장을 따른다. 운동
 | 필드 | 설명 | 근거 |
 |-----|-----|-----|
 | `durationSeconds` | 그날 완료된 세션마다 (종료 − 시작)의 합 | BR-020 |
-| `exercises` | 같은 운동은 하나로 합침. 운동 순서는 처음 추가된 시각 순, 세트는 추가 시각 순으로 1부터 번호 | BR-007, BR-020 |
+| `exercises` | 같은 운동은 하나로 합침. 운동 순서는 처음 추가된 시각 순, 세트는 추가 시각 순으로 1부터 번호 | `nameEn`·`target`은 null일 수 있고, 이름·부위는 지금 종목 값이다(workout-exercise-manage 4.3) | BR-007, BR-020, BR-024 |
 | `categories` | 부위 순서. 그 부위 운동의 `exerciseIds` | BR-015 |
 | `media` | 세션 시작 순, 붙은 순서. 주소는 workout-media API-MEDIA-002·003 | workout-media REQ-MEDIA-002 |
 

@@ -1,15 +1,16 @@
 # 운동 통계 설계 문서
 
-- 문서 버전: v0.3
+- 문서 버전: v0.4
 - 작성일: 2026-10-09
 - 상태: 초안
-- 요구사항: `docs/requirements/workout-stats.md` (v0.10)
+- 요구사항: `docs/requirements/workout-stats.md` (v0.11)
 - 공통 설계: `docs/design/architecture.md` (v0.13), 운동 기록 공통 `docs/design/workout-common.md` (v0.8, 테이블·방치된 세션 정리)
 - Figma: 5행 `dashboard-overview`(4:261)
 - 변경 이력:
   - v0.1 (2026-10-09) — 최초 작성. 부위별 볼륨 추이, 부위별 종목 목록, 종목별 볼륨 추이 API 3개
   - v0.2 (2026-10-09) — 요구사항 v0.9 반영. 부위를 고르면 모든 종목 선택(BR-017), 종목 개수 제한 폐기(BR-018·ERR-008 폐기, DEC-STATS-009)
   - v0.3 (2026-10-10) — 요구사항 v0.10 반영. API-STATS-001이 부위 하나(`categoryId`, 필수)를 받아 그 부위를 한 날 7개와 그 부위의 볼륨만 준다(BR-019, BR-020, ERR-009, DEC-STATS-010·011). 부위 칩은 API-EXERCISE-004에서 받는다
+  - v0.4 (2026-10-10) — 요구사항 v0.11 반영(종목이 사용자 소유, workout-exercise-manage). 종목 정렬에 `created_at`, `id`를 더함(DEC-WORKOUT-025), `exerciseIds`는 본인 종목만(다른 사용자의 종목은 없는 운동과 같이 400)
 
 ---
 
@@ -126,13 +127,13 @@
 #### REQ-STATS-003 부위별 종목 목록 (API-STATS-002)
 1. (A), (B).
 2. `categoryId`(필수, UUID)를 검증한다. 없거나 형식이 틀리거나 없는 부위면 400 `VALIDATION_FAILED`, `errors[].field` = `categoryId` (ERR-004, DEC-STATS-005).
-3. 조회 저장소에서 그 부위의 운동 중, 사용자의 **완료된** 세션에서 세트를 1개 이상 기록한 운동을 `exercise.sort_order` 순으로 조회한다(쿼리 1회) (BR-011, BR-017). 지금 보는 날짜와 관계없이 전체 기록에서 고른다.
+3. 조회 저장소에서 그 부위의 운동 중, 사용자의 **완료된** 세션에서 세트를 1개 이상 기록한 운동을 `exercise.sort_order`, `created_at`, `id` 순으로 조회한다(쿼리 1회). 종목은 본인 것만 있다(workout-common BR-022) (BR-011, BR-017). 지금 보는 날짜와 관계없이 전체 기록에서 고른다.
 4. 200과 목록. 없으면 빈 목록 (ERR-006).
 
 #### REQ-STATS-004 종목별 볼륨 추이 (API-STATS-003)
 1. (A), (B).
 2. 검증: `exerciseIds` 1개 이상, UUID, 중복 없음 (DEC-STATS-009) / `dates` 1~7개, `YYYY-MM-DD`, 중복 없음 (BR-004). 위반 시 400 `VALIDATION_FAILED`.
-3. `exerciseIds` 중 없는 운동이 있으면 400 `VALIDATION_FAILED`, `errors[].field` = `exerciseIds` (ERR-005, DEC-STATS-005).
+3. `exerciseIds` 중 본인 종목 목록에 없는 운동이 있으면(다른 사용자의 종목 포함) 400 `VALIDATION_FAILED`, `errors[].field` = `exerciseIds` (ERR-005, DEC-STATS-005, workout-exercise-manage 7.2).
 4. 조회 저장소에서 사용자의 완료된 세션 중 `performed_date`가 `dates`에 있는 것 → 세션 운동(고른 운동) → 세트를 이어 `(performed_date, 운동)`별 Σ(중량 × 반복 횟수) (BR-009). 쿼리 1회.
 5. 서비스에서 `dates`를 오름차순으로 두고(BR-008), 운동을 요청 순서대로 각 날짜 자리에 볼륨을 채운다. 그날 하지 않았으면 null (BR-006, ERR-006).
 6. 200과 ExerciseVolumeTrendResponse.
@@ -180,7 +181,7 @@ App                                      API                                   D
 | BR-012 | 부위 4개, 순서대로 | 앱, 기존 API | 두 그래프의 부위 칩은 API-EXERCISE-004(`exercise_category`를 `sort_order` 순으로)를 쓴다 | — |
 | BR-015 | 종목별 추이는 같은 날짜 | 앱, API 설계 | API-STATS-003이 날짜를 직접 받는다. 앱은 API-STATS-001의 `dates`를 보낸다 (DEC-STATS-004). 넘겨도 부위·종목 선택은 그대로(요구사항 TODO-012). 부위별 추이의 부위를 바꿔도 종목별 추이는 그 새 날짜를 따른다(요구사항 TODO-016) | — |
 | BR-016 | 하나씩 밀어 넘기기 | API 설계, 앱 | 앱이 `before` = 지금 구간의 가장 최근 날로 다시 부른다. 그 날을 빼고 이전 7개가 오므로 하나 밀린 구간이 된다 (DEC-STATS-002) | — |
-| BR-017 | 처음엔 가슴, 모든 종목 선택 | 앱, 조회 저장소 | API-STATS-002가 목록 순서(`exercise.sort_order`)를 보장하고, 앱이 가슴과 목록의 모든 종목을 고른다. 가슴에 기록이 없어도 가슴(요구사항 TODO-013) | — |
+| BR-017 | 처음엔 가슴, 모든 종목 선택 | 앱, 조회 저장소 | API-STATS-002가 본인 목록 순서(`exercise.sort_order`, `created_at`, `id`)를 보장하고, 앱이 가슴과 목록의 모든 종목을 고른다. 가슴에 기록이 없어도 가슴(요구사항 TODO-013) | — |
 | BR-019 | 부위별 추이는 부위 하나, 처음엔 가슴 | 앱, 요청 검증 | 앱은 칩을 하나만 선택 상태로 두고 처음엔 가슴(요구사항 TODO-017). 서버는 `categoryId`를 하나만 받는다(필수, DEC-STATS-010). 바꾸면 `before` 없이 다시 부른다(요구사항 TODO-014) | 400 VALIDATION_FAILED (`categoryId` 없음) |
 | BR-020 | 가로축 = 고른 부위를 한 날 | 조회 저장소 | 운동한 날 조회에 "그 부위의 운동 세트가 있는 세션" 조건을 더한다. 처음 보기·`before`·`hasPrevious`가 모두 같은 조회를 쓰므로 함께 지켜진다 | — |
 
@@ -348,7 +349,7 @@ Errors
 | HTTP | 에러 코드 | 조건 | 관련 |
 |------|----------|-----|-----|
 | 400 | VALIDATION_FAILED | `exerciseIds` 없음·중복·형식 오류 | REQ-STATS-004 |
-| 400 | VALIDATION_FAILED | 없는 운동 | ERR-005 |
+| 400 | VALIDATION_FAILED | 없는 운동, 다른 사용자의 종목 | ERR-005 |
 | 400 | VALIDATION_FAILED | `dates` 없음·8개 이상·중복·형식 오류 | BR-004 |
 | 401 | UNAUTHORIZED | 인증 없음 | ERR-001 |
 
