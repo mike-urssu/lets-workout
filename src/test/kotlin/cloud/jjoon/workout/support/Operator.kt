@@ -34,9 +34,9 @@ class Operator(private val jdbc: JdbcTemplate) {
         jdbc.update("DELETE FROM users")
     }
 
-    /** The catalog comes from schema script 2 (BR-009); tests look exercises up by name. */
-    fun exerciseId(name: String): UUID =
-        jdbc.queryForObject("SELECT id FROM exercise WHERE name = ?", UUID::class.java, name)!!
+    /** Every account gets its own copy of the default list (BR-022); tests look exercises up by owner and name. */
+    fun exerciseId(name: String, userId: UUID): UUID =
+        jdbc.queryForObject("SELECT id FROM exercise WHERE user_id = ? AND name = ?", UUID::class.java, userId, name)!!
 
     fun categoryId(name: String): UUID =
         jdbc.queryForObject("SELECT id FROM exercise_category WHERE name = ?", UUID::class.java, name)!!

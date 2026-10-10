@@ -106,6 +106,16 @@ class WorkoutSessionQueryRepository(private val dsl: DSLContext) {
             .returning(WORKOUT_SESSION.ID)
             .fetch(WORKOUT_SESSION.ID)
 
+    /** Of the given completed sessions, deletes those left without sets after an exercise was deleted (BR-029). */
+    fun deleteCompletedWithoutSets(userId: UUID, sessionIds: Collection<UUID>): List<UUID> =
+        dsl.deleteFrom(WORKOUT_SESSION)
+            .where(WORKOUT_SESSION.ID.`in`(sessionIds))
+            .and(WORKOUT_SESSION.USER_ID.eq(userId))
+            .and(WORKOUT_SESSION.STATUS.eq(WorkoutSessionStatus.COMPLETED.name))
+            .andNotExists(selectOne().from(setsOf(WORKOUT_SESSION.ID)))
+            .returning(WORKOUT_SESSION.ID)
+            .fetch(WORKOUT_SESSION.ID)
+
     private fun expired(userId: UUID, cutoff: Instant) =
         WORKOUT_SESSION.USER_ID.eq(userId)
             .and(WORKOUT_SESSION.STATUS.eq(WorkoutSessionStatus.IN_PROGRESS.name))
@@ -140,8 +150,8 @@ data class SessionExerciseRow(
     val sessionExerciseId: UUID,
     val exerciseId: UUID,
     val name: String,
-    val nameEn: String,
-    val target: String,
+    val nameEn: String?,
+    val target: String?,
     val categoryId: UUID,
     val categoryName: String,
     val categorySortOrder: Int,

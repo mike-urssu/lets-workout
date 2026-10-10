@@ -103,8 +103,8 @@ data class WorkoutDayResponse(
 data class DayExerciseResponse(
     val exerciseId: UUID,
     val name: String,
-    val nameEn: String,
-    val target: String,
+    val nameEn: String?,
+    val target: String?,
     val category: CategoryRef,
     val sets: List<WorkoutSetResponse>,
     val setCount: Int,

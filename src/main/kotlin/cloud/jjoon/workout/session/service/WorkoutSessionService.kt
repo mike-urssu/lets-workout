@@ -90,7 +90,8 @@ class WorkoutSessionService(
     @Transactional
     fun addExercise(userId: UUID, sessionId: UUID, exerciseId: UUID): AddedExercise {
         val session = editable(userId, sessionId)
-        if (!exerciseRepository.existsById(exerciseId)) throw BusinessException(ErrorCode.EXERCISE_NOT_FOUND)
+        val exercise = exerciseRepository.findByIdOrNull(exerciseId) ?: throw BusinessException(ErrorCode.EXERCISE_NOT_FOUND)
+        if (exercise.userId != userId) throw BusinessException(ErrorCode.FORBIDDEN) // BR-009
         val existing = sessionExerciseRepository.findByWorkoutSessionIdAndExerciseId(session.id!!, exerciseId)
         val sessionExercise = existing
             ?: sessionExerciseRepository.saveAndFlush(WorkoutSessionExercise(session.id!!, exerciseId, clock.instant()))
@@ -134,6 +135,20 @@ class WorkoutSessionService(
     @Transactional
     fun deleteSet(userId: UUID, sessionId: UUID, sessionExerciseId: UUID, setId: UUID) {
         setRepository.delete(setOf(sessionExerciseOf(editable(userId, sessionId), sessionExerciseId), setId))
+    }
+
+    /** Deleting an exercise holds the in-progress session first, as every set change does (DEC-WORKOUT-027). */
+    fun lockInProgress(userId: UUID) {
+        sessionRepository.findForUpdateByUserIdAndStatus(userId, WorkoutSessionStatus.IN_PROGRESS)
+    }
+
+    /** BR-029: in-progress sessions may stay empty; completed ones may not. Files go after commit (workout-media 6.4). */
+    fun deleteSessionsLeftEmpty(userId: UUID, sessionIds: List<UUID>): List<UUID> {
+        if (sessionIds.isEmpty()) return emptyList()
+        val deleted = queryRepository.deleteCompletedWithoutSets(userId, sessionIds)
+        mediaService.deleteFilesOfSessions(userId, deleted)
+        deleted.forEach { log.info("event=workout_session.deleted userId={} sessionId={}", userId, it) }
+        return deleted
     }
 
     private fun sessionExerciseOf(session: WorkoutSession, sessionExerciseId: UUID): WorkoutSessionExercise =

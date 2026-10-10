@@ -1,5 +1,6 @@
 package cloud.jjoon.workout.stats.repository
 
+import cloud.jjoon.workout.exercise.repository.LIST_ORDER
 import cloud.jjoon.workout.jooq.Tables.EXERCISE
 import cloud.jjoon.workout.jooq.Tables.WORKOUT_SESSION
 import cloud.jjoon.workout.jooq.Tables.WORKOUT_SESSION_EXERCISE
@@ -42,13 +43,14 @@ class StatsQueryRepository(private val dsl: DSLContext) {
             .fetch(ws.PERFORMED_DATE)
     }
 
-    /** The body part's exercises the user has sets for in a completed session, in catalog order (BR-011, BR-017). */
+    /** The body part's exercises the user has sets for in a completed session, in list order (BR-011, BR-017). */
     fun findRecordedExercises(userId: UUID, categoryId: UUID): List<StatsExercise> {
         val ws = WORKOUT_SESSION
         val wse = WORKOUT_SESSION_EXERCISE
         return dsl.select(EXERCISE.ID, EXERCISE.NAME)
             .from(EXERCISE)
             .where(EXERCISE.EXERCISE_CATEGORY_ID.eq(categoryId))
+            .and(EXERCISE.USER_ID.eq(userId))
             .andExists(
                 selectOne().from(wse)
                     .join(ws).on(ws.ID.eq(wse.WORKOUT_SESSION_ID))
@@ -57,7 +59,7 @@ class StatsQueryRepository(private val dsl: DSLContext) {
                     .and(ws.STATUS.eq(WorkoutSessionStatus.COMPLETED.name))
                     .andExists(selectOne().from(WORKOUT_SET).where(WORKOUT_SET.WORKOUT_SESSION_EXERCISE_ID.eq(wse.ID))),
             )
-            .orderBy(EXERCISE.SORT_ORDER)
+            .orderBy(LIST_ORDER)
             .fetch { StatsExercise(it.value1(), it.value2()) }
     }
 
@@ -80,8 +82,9 @@ class StatsQueryRepository(private val dsl: DSLContext) {
             .associate { it.value1() to it.value2() }
     }
 
-    fun findExercises(ids: Collection<UUID>): Map<UUID, String> =
-        dsl.select(EXERCISE.ID, EXERCISE.NAME).from(EXERCISE).where(EXERCISE.ID.`in`(ids))
+    /** Someone else's exercise is as unknown as a missing one (workout-exercise-manage 7.2). */
+    fun findExercises(userId: UUID, ids: Collection<UUID>): Map<UUID, String> =
+        dsl.select(EXERCISE.ID, EXERCISE.NAME).from(EXERCISE).where(EXERCISE.ID.`in`(ids)).and(EXERCISE.USER_ID.eq(userId))
             .fetch().associate { it.value1() to it.value2() }
 
     /** Σ(weight × repetitions) per (day, exercise) over the given days and exercises (BR-009). */

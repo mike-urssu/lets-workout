@@ -140,7 +140,7 @@ class WorkoutSessionApiTest {
 
     @Test
     fun `REQ-EXERCISE-001 세션에 추가한 운동은 추가한 순서로 현황에 나온다`() {
-        val squat = operator.exerciseId("스쿼트")
+        val squat = operator.exerciseId("스쿼트", me.id)
         val session = startedSessionId()
 
         addExercise(session, squat).andExpect {
@@ -156,7 +156,7 @@ class WorkoutSessionApiTest {
             jsonPath("$.firstSetAt") { value(null) }
         }
         clock.advance(Duration.ofMinutes(1))
-        addExercise(session, operator.exerciseId("벤치프레스"))
+        addExercise(session, operator.exerciseId("벤치프레스", me.id))
 
         inProgress().andExpect {
             status { isOk() }
@@ -168,9 +168,9 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-EXERCISE-001 이미 세션에 있는 운동을 다시 고르면 새로 추가하지 않고 그 운동을 돌려준다`() {
         val session = startedSessionId()
-        val first = sessionExerciseId(session, operator.exerciseId("스쿼트"))
+        val first = sessionExerciseId(session, operator.exerciseId("스쿼트", me.id))
 
-        addExercise(session, operator.exerciseId("스쿼트")).andExpect {
+        addExercise(session, operator.exerciseId("스쿼트", me.id)).andExpect {
             status { isOk() }
             jsonPath("$.sessionExerciseId") { value(first) }
         }
@@ -201,7 +201,7 @@ class WorkoutSessionApiTest {
     fun `ERR-009 없는 세션은 찾을 수 없다`() {
         val missing = UUID.randomUUID().toString()
 
-        addExercise(missing, operator.exerciseId("스쿼트")).andExpect {
+        addExercise(missing, operator.exerciseId("스쿼트", me.id)).andExpect {
             status { isNotFound() }
             jsonPath("$.code") { value("WORKOUT_SESSION_NOT_FOUND") }
         }
@@ -212,7 +212,7 @@ class WorkoutSessionApiTest {
     fun `ERR-003 다른 사용자의 세션은 바꾸거나 취소할 수 없다`() {
         val othersSession = startedSessionId(users.signIn("other.user"))
 
-        addExercise(othersSession, operator.exerciseId("스쿼트")).andExpect {
+        addExercise(othersSession, operator.exerciseId("스쿼트", me.id)).andExpect {
             status { isForbidden() }
             jsonPath("$.code") { value("FORBIDDEN") }
         }
@@ -231,7 +231,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-SET-001 세트를 추가하면 운동마다 1번부터 번호가 붙고 현황에 반영된다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
 
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""").andExpect {
             status { isCreated() }
@@ -260,7 +260,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-003 BR-005 경계값 안의 중량과 반복 횟수는 기록할 수 있다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
 
         addSet(session, bench, """{"weight": 0, "repetitions": 1}""").andExpect { status { isCreated() } }
         addSet(session, bench, """{"weight": 1000, "repetitions": 1000}""").andExpect { status { isCreated() } }
@@ -270,7 +270,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `ERR-005 ERR-010 범위를 벗어나거나 형식이 틀리거나 빠진 세트 값은 입력값 오류다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
 
         listOf(
             """{"weight": -0.01, "repetitions": 10}""",
@@ -293,7 +293,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-SET-002 세트를 고쳐도 세트 번호는 그대로다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         val second = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))
 
@@ -310,7 +310,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-007 세트를 지우면 남은 세트가 빈 번호 없이 다시 번호를 가진다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         val first = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))
         val second = idOf(addSet(session, bench, """{"weight": 62.5, "repetitions": 8}"""))
         val third = idOf(addSet(session, bench, """{"weight": 65, "repetitions": 6}"""))
@@ -326,8 +326,8 @@ class WorkoutSessionApiTest {
     @Test
     fun `ERR-009 세션에 없는 운동이나 그 운동에 없는 세트는 찾을 수 없다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
-        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
+        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트", me.id))
         val benchSet = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))
         val unknown = UUID.randomUUID().toString()
 
@@ -346,12 +346,11 @@ class WorkoutSessionApiTest {
     @Test
     fun `NFR-SEC-002 다른 사용자의 운동과 세트 ID를 내 세션 경로에 넣어도 접근할 수 없다`() {
         val other = users.signIn("other.user")
-        val exercise = operator.exerciseId("벤치프레스")
         val othersSession = startedSessionId(other)
-        val othersBench = sessionExerciseId(othersSession, exercise, other)
+        val othersBench = sessionExerciseId(othersSession, operator.exerciseId("벤치프레스", other.id), other)
         val othersSet = idOf(addSet(othersSession, othersBench, """{"weight": 60, "repetitions": 10}""", other))
         val mySession = startedSessionId()
-        val myBench = sessionExerciseId(mySession, exercise)
+        val myBench = sessionExerciseId(mySession, operator.exerciseId("벤치프레스", me.id))
 
         addSet(mySession, othersBench, """{"weight": 1, "repetitions": 1}""").andExpect { status { isNotFound() } }
         updateSet(mySession, myBench, othersSet, """{"weight": 1, "repetitions": 1}""").andExpect { status { isNotFound() } }
@@ -367,7 +366,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-EXERCISE-002 세션에서 운동을 지우면 그 운동의 세트도 함께 지워진다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
 
         removeExercise(session, bench).andExpect { status { isNoContent() } }
@@ -382,13 +381,13 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-WORKOUT-009 BR-015 현황은 세트가 있는 운동을 부위 순서로 묶어 부위별 볼륨과 세트 수를 준다`() {
         val session = startedSessionId()
-        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트"))          // no sets
+        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트", me.id))          // no sets
         clock.advance(Duration.ofMinutes(1))
-        val row = sessionExerciseId(session, operator.exerciseId("랫풀다운"))
+        val row = sessionExerciseId(session, operator.exerciseId("랫풀다운", me.id))
         clock.advance(Duration.ofMinutes(1))
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         clock.advance(Duration.ofMinutes(1))
-        val incline = sessionExerciseId(session, operator.exerciseId("인클라인 벤치프레스"))
+        val incline = sessionExerciseId(session, operator.exerciseId("인클라인 벤치프레스", me.id))
         addSet(session, row, """{"weight": 50, "repetitions": 12}""")
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         addSet(session, bench, """{"weight": 70, "repetitions": 8}""")
@@ -409,7 +408,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-WORKOUT-002 세트가 있는 세션을 완료하면 요약이 담긴 기록이 되고 새로 시작할 수 있다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         clock.advance(Duration.ofMinutes(65))
 
@@ -429,7 +428,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `workout-media BR-005 완료할 때 고른 사진·동영상이 10개를 넘거나 이 세션의 것이 아니면 입력값 오류다`() {
         val session = startedSessionId()
-        addSet(session, sessionExerciseId(session, operator.exerciseId("벤치프레스")), """{"weight": 60, "repetitions": 10}""")
+        addSet(session, sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id)), """{"weight": 60, "repetitions": 10}""")
         val eleven = (1..11).joinToString(",") { "\"${UUID.randomUUID()}\"" }
 
         complete(session, """{"mediaIds": [$eleven]}""").andExpect {
@@ -446,7 +445,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-012 세트가 하나도 없으면 완료할 수 없다`() {
         val session = startedSessionId()
-        sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
 
         complete(session).andExpect {
             status { isConflict() }
@@ -471,7 +470,7 @@ class WorkoutSessionApiTest {
         val body = """{"weight": 1, "repetitions": 1}"""
 
         listOf(
-            addExercise(session.id, operator.exerciseId("스쿼트")),
+            addExercise(session.id, operator.exerciseId("스쿼트", me.id)),
             removeExercise(session.id, session.sessionExerciseId),
             addSet(session.id, session.sessionExerciseId, body),
             updateSet(session.id, session.sessionExerciseId, session.setId, body),
@@ -487,7 +486,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-012 완료와 세트 추가가 동시에 와도 완료된 세션에 세트가 생기지 않는다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         val pool = Executors.newFixedThreadPool(9)
         val ready = CountDownLatch(1)
@@ -513,7 +512,7 @@ class WorkoutSessionApiTest {
 
     @Test
     fun `BR-016 이전 기록은 그 종목을 마지막으로 완료한 세션의 세트다`() {
-        val bench = operator.exerciseId("벤치프레스")
+        val bench = operator.exerciseId("벤치프레스", me.id)
         val older = startedSessionId()
         val olderBench = sessionExerciseId(older, bench)
         addSet(older, olderBench, """{"weight": 60, "repetitions": 12}""")
@@ -540,7 +539,7 @@ class WorkoutSessionApiTest {
 
     @Test
     fun `ERR-013 그 종목을 완료한 기록이 없으면 이전 기록은 내용 없음이다`() {
-        val bench = operator.exerciseId("벤치프레스")
+        val bench = operator.exerciseId("벤치프레스", me.id)
         val inProgress = startedSessionId()
         addSet(inProgress, sessionExerciseId(inProgress, bench), """{"weight": 80, "repetitions": 5}""")
 
@@ -549,10 +548,10 @@ class WorkoutSessionApiTest {
 
     @Test
     fun `BR-001 다른 사용자의 기록은 이전 기록으로 쓰지 않는다`() {
-        val bench = operator.exerciseId("벤치프레스")
+        val bench = operator.exerciseId("벤치프레스", me.id)
         val other = users.signIn("other.user")
         val othersSession = startedSessionId(other)
-        addSet(othersSession, sessionExerciseId(othersSession, bench, other), """{"weight": 100, "repetitions": 5}""", other)
+        addSet(othersSession, sessionExerciseId(othersSession, operator.exerciseId("벤치프레스", other.id), other), """{"weight": 100, "repetitions": 5}""", other)
         mockMvc.post("/api/v1/workout-sessions/$othersSession/complete") { header("Authorization", "Bearer ${other.token}") }
             .andExpect { status { isOk() } }
 
@@ -570,8 +569,8 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-021 불러오기 전에 그 종목의 세트만 모두 지운다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
-        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
+        val squat = sessionExerciseId(session, operator.exerciseId("스쿼트", me.id))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         addSet(session, bench, """{"weight": 65, "repetitions": 8}""")
         addSet(session, squat, """{"weight": 100, "repetitions": 5}""")
@@ -590,7 +589,7 @@ class WorkoutSessionApiTest {
         val completed = completedSession()
         val other = users.signIn("other.user")
         val othersSession = startedSessionId(other)
-        val othersBench = sessionExerciseId(othersSession, operator.exerciseId("벤치프레스"), other)
+        val othersBench = sessionExerciseId(othersSession, operator.exerciseId("벤치프레스", other.id), other)
         val mine = startedSessionId()
 
         clearSets(completed.id, completed.sessionExerciseId).andExpect {
@@ -611,7 +610,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `REQ-WORKOUT-010 진행 중인 운동을 취소하면 운동과 세트가 함께 지워지고 다시 시작할 수 있다`() {
         val session = startedSessionId()
-        addSet(session, sessionExerciseId(session, operator.exerciseId("벤치프레스")), """{"weight": 60, "repetitions": 10}""")
+        addSet(session, sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id)), """{"weight": 60, "repetitions": 10}""")
 
         cancel(session).andExpect { status { isNoContent() } }
 
@@ -639,7 +638,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-012 ERR-012 세트 없는 진행 중 운동도 취소할 수 있다`() {
         val session = startedSessionId()
-        sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         complete(session).andExpect { jsonPath("$.code") { value("WORKOUT_SESSION_HAS_NO_SETS") } }
 
         cancel(session).andExpect { status { isNoContent() } }
@@ -648,7 +647,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-013 시작 후 6시간이 지난 세션은 마지막 세트 시각에 완료되고 새로 시작할 수 있다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         clock.advance(Duration.ofMinutes(40))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")  // 09:40
@@ -666,7 +665,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-013 시작 후 6시간이 지난 세트 없는 세션은 지워진다`() {
         val session = startedSessionId()
-        sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         clock.advance(Duration.ofHours(6).plusSeconds(1))
 
         inProgress().andExpect { status { isNoContent() } }
@@ -684,7 +683,7 @@ class WorkoutSessionApiTest {
     @Test
     fun `BR-013 BR-002 6시간이 지난 세션에 세트를 추가하면 완료된 세션이라 바꿀 수 없다`() {
         val session = startedSessionId()
-        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스"))
+        val bench = sessionExerciseId(session, operator.exerciseId("벤치프레스", me.id))
         addSet(session, bench, """{"weight": 60, "repetitions": 10}""")
         clock.advance(Duration.ofHours(7))
 
@@ -711,7 +710,7 @@ class WorkoutSessionApiTest {
 
     private data class CompletedSession(val id: String, val sessionExerciseId: String, val setId: String)
 
-    private fun completedSession(exerciseId: UUID = operator.exerciseId("벤치프레스")): CompletedSession {
+    private fun completedSession(exerciseId: UUID = operator.exerciseId("벤치프레스", me.id)): CompletedSession {
         val session = startedSessionId()
         val bench = sessionExerciseId(session, exerciseId)
         val set = idOf(addSet(session, bench, """{"weight": 60, "repetitions": 10}"""))

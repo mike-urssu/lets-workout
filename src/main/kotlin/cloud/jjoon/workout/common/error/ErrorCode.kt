@@ -22,6 +22,8 @@ enum class ErrorCode(val status: HttpStatus, val message: String) {
     WORKOUT_SESSION_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 완료된 운동입니다."),
     WORKOUT_SESSION_HAS_NO_SETS(HttpStatus.CONFLICT, "세트를 하나 이상 기록해야 운동을 완료할 수 있습니다."),
     EXERCISE_NOT_FOUND(HttpStatus.NOT_FOUND, "운동을 찾을 수 없습니다."),
+    EXERCISE_NAME_DUPLICATED(HttpStatus.CONFLICT, "같은 부위에 같은 이름의 종목이 있습니다."),
+    EXERCISE_ORDER_OUTDATED(HttpStatus.CONFLICT, "종목 목록이 바뀌었습니다. 다시 불러와 순서를 정해 주세요."),
     EXERCISE_CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "운동 부위를 찾을 수 없습니다."),
     SESSION_EXERCISE_NOT_FOUND(HttpStatus.NOT_FOUND, "운동 기록에서 해당 운동을 찾을 수 없습니다."),
     WORKOUT_SET_NOT_FOUND(HttpStatus.NOT_FOUND, "세트를 찾을 수 없습니다."),

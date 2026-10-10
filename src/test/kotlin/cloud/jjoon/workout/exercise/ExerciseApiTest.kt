@@ -143,7 +143,7 @@ class ExerciseApiTest {
         val sessionExercise = idOf(mockMvc.post("/api/v1/workout-sessions/$session/exercises") {
             header("Authorization", auth)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"exerciseId": "${operator.exerciseId(exercise)}"}"""
+            content = """{"exerciseId": "${operator.exerciseId(exercise, user.id)}"}"""
         }, "sessionExerciseId")
         mockMvc.post("/api/v1/workout-sessions/$session/exercises/$sessionExercise/sets") {
             header("Authorization", auth)
@@ -154,7 +154,7 @@ class ExerciseApiTest {
             mockMvc.post("/api/v1/workout-sessions/$session/exercises") {
                 header("Authorization", auth)
                 contentType = MediaType.APPLICATION_JSON
-                content = """{"exerciseId": "${operator.exerciseId(other)}"}"""
+                content = """{"exerciseId": "${operator.exerciseId(other, user.id)}"}"""
             }.andExpect { status { isCreated() } }
         }
         if (complete) {

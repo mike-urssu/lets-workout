@@ -52,7 +52,7 @@ class StatsService(
         if (dates.size !in 1..DAYS || dates.toSet().size != dates.size) {
             throw invalid("dates", "1개 이상 ${DAYS}개 이하의 서로 다른 날짜여야 합니다.") // BR-004
         }
-        val names = queryRepository.findExercises(exerciseIds)
+        val names = queryRepository.findExercises(userId, exerciseIds)
         if (names.size != exerciseIds.size) throw invalid("exerciseIds", "존재하지 않는 운동입니다.") // ERR-005
         val sorted = dates.sorted()
         val volumes = queryRepository.sumVolumeByExercise(userId, exerciseIds, sorted)

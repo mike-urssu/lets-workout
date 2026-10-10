@@ -136,7 +136,7 @@ class WorkoutDayApiTest {
             jsonPath("$.exercises[0].volume") { value(1540.0) }          // 600 + 520 + 420
             jsonPath("$.categories[*].name") { value(contains("가슴", "등", "하체")) }
             jsonPath("$.categories[0].volume") { value(1540.0) }
-            jsonPath("$.categories[2].exerciseIds") { value(contains(operator.exerciseId("스쿼트").toString())) }
+            jsonPath("$.categories[2].exerciseIds") { value(contains(operator.exerciseId("스쿼트", me.id).toString())) }
             jsonPath("$.summary.exerciseCount") { value(3) }
             jsonPath("$.summary.totalSets") { value(5) }
             jsonPath("$.summary.totalRepetitions") { value(41) }
@@ -225,7 +225,7 @@ class WorkoutDayApiTest {
         idOf(mockMvc.post("/api/v1/workout-sessions/$session/exercises") {
             header("Authorization", "Bearer ${user.token}")
             contentType = MediaType.APPLICATION_JSON
-            content = """{"exerciseId": "${operator.exerciseId(name)}"}"""
+            content = """{"exerciseId": "${operator.exerciseId(name, user.id)}"}"""
         }, "sessionExerciseId")
 
     private fun addSet(session: String, sessionExercise: String, weight: Int, repetitions: Int, user: SignedInUser = me) {
@@ -263,7 +263,7 @@ class WorkoutDayApiTest {
             val sessionExercise = idOf(mockMvc.post("/api/v1/workout-sessions/$session/exercises") {
                 header("Authorization", auth)
                 contentType = MediaType.APPLICATION_JSON
-                content = """{"exerciseId": "${operator.exerciseId(name)}"}"""
+                content = """{"exerciseId": "${operator.exerciseId(name, user.id)}"}"""
             }, "sessionExerciseId")
             mockMvc.post("/api/v1/workout-sessions/$session/exercises/$sessionExercise/sets") {
                 header("Authorization", auth)

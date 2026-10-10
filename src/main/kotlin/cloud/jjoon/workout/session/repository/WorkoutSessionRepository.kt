@@ -15,4 +15,8 @@ interface WorkoutSessionRepository : JpaRepository<WorkoutSession, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from WorkoutSession s where s.id = :id")
     fun findForUpdateById(id: UUID): WorkoutSession?
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from WorkoutSession s where s.userId = :userId and s.status = :status")
+    fun findForUpdateByUserIdAndStatus(userId: UUID, status: WorkoutSessionStatus): WorkoutSession?
 }

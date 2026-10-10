@@ -159,7 +159,7 @@ class StatsApiTest {
         exercises(operator.categoryId("가슴").toString()).andExpect {
             status { isOk() }
             jsonPath("$[*].name") { value(contains("벤치프레스", "인클라인 벤치프레스")) }
-            jsonPath("$[0].id") { value(operator.exerciseId("벤치프레스").toString()) }
+            jsonPath("$[0].id") { value(operator.exerciseId("벤치프레스", me.id).toString()) }
         }
         exercises(operator.categoryId("어깨").toString()).andExpect {
             status { isOk() }
@@ -243,7 +243,7 @@ class StatsApiTest {
     }
 
     private fun exerciseVolumes(exercises: List<String>, dates: List<String>): ResultActionsDsl =
-        exerciseVolumesById(exercises.map { operator.exerciseId(it).toString() }, dates)
+        exerciseVolumesById(exercises.map { operator.exerciseId(it, me.id).toString() }, dates)
 
     private fun exerciseVolumesById(exerciseIds: List<String>, dates: List<String>): ResultActionsDsl =
         mockMvc.get("/api/v1/stats/exercise-volumes") {
@@ -287,7 +287,7 @@ class StatsApiTest {
         idOf(mockMvc.post("/api/v1/workout-sessions/$session/exercises") {
             header("Authorization", "Bearer ${user.token}")
             contentType = MediaType.APPLICATION_JSON
-            content = """{"exerciseId": "${operator.exerciseId(name)}"}"""
+            content = """{"exerciseId": "${operator.exerciseId(name, user.id)}"}"""
         }, "sessionExerciseId")
 
     private fun addSet(session: String, sessionExercise: String, weight: Int, user: SignedInUser) {

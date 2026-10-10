@@ -290,7 +290,7 @@ class WorkoutMediaApiTest {
         val sessionExercise = idOf(mockMvc.post("/api/v1/workout-sessions/$sessionId/exercises") {
             header("Authorization", auth)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"exerciseId": "${operator.exerciseId("벤치프레스")}"}"""
+            content = """{"exerciseId": "${operator.exerciseId("벤치프레스", user.id)}"}"""
         }, "sessionExerciseId")
         mockMvc.post("/api/v1/workout-sessions/$sessionId/exercises/$sessionExercise/sets") {
             header("Authorization", auth)
