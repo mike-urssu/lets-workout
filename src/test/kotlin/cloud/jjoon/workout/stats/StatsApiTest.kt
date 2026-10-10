@@ -40,7 +40,7 @@ class StatsApiTest {
     fun setUp() {
         operator.deleteAllAccounts()
         clock.reset() // 2026-10-05T09:00Z, 18:00 in Seoul
-        me = users.signIn("joonhee.song")
+        me = users.signIn("demo.user")
     }
 
     @Test

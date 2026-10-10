@@ -25,7 +25,7 @@ class ErrorHandlingTest {
     fun `형식이 깨진 JSON 요청은 입력값 오류다`() {
         mockMvc.post("/api/v1/auth/login") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"loginId": "joonhee.song", "pin": """
+            content = """{"loginId": "demo.user", "pin": """
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("VALIDATION_FAILED") }
@@ -36,7 +36,7 @@ class ErrorHandlingTest {
     @Test
     fun `형식을 지원하지 않는 요청은 서버 오류가 아니라 입력값 오류다`() {
         mockMvc.post("/api/v1/auth/login") {
-            content = "loginId=joonhee.song&pin=123456"
+            content = "loginId=demo.user&pin=123456"
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("VALIDATION_FAILED") }

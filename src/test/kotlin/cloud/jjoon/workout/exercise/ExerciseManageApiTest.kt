@@ -51,7 +51,7 @@ class ExerciseManageApiTest {
     fun setUp() {
         operator.deleteAllAccounts()
         clock.reset()
-        me = users.signIn("joonhee.song")
+        me = users.signIn("demo.user")
         chest = operator.categoryId("가슴")
         back = operator.categoryId("등")
     }
@@ -255,7 +255,7 @@ class ExerciseManageApiTest {
     fun `NFR-INTEG-003 계정을 지우면 그 사용자의 종목도 지워진다`() {
         create(chest, "케이블 크로스오버").andExpect { status { isCreated() } }
 
-        operator.deleteAccount("joonhee.song")
+        operator.deleteAccount("demo.user")
 
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM exercise WHERE user_id = ?", Int::class.java, me.id))
     }

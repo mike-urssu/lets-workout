@@ -281,7 +281,7 @@ URL·필드 규칙은 공통 설계 5장을 따른다.
 
 Request
 ```json
-{ "loginId": "joonhee.song", "pin": "123456" }
+{ "loginId": "demo.user", "pin": "123456" }
 ```
 
 Response `200 OK`
@@ -495,7 +495,7 @@ users 1 ──── N login_session          (참조: 함께 삭제)
 ### 10.3 테스트 포인트
 - BR-007·BR-008: 틀린 PIN 4회 → 실패, 5회째 → 실패 응답 후 잠금. 잠금 중 올바른 PIN → AUTH_ACCOUNT_LOCKED(`retryAt` 확인). 5분 후 틀린 PIN 4회까지는 잠기지 않음(0부터).
 - BR-010: 없는 아이디와 틀린 PIN의 응답 코드·메시지가 같다.
-- BR-002: `Joonhee.song`으로 로그인하면 `joonhee.song` 계정에 로그인되지 않는다(대소문자 구분).
+- BR-002: `Demo.user`으로 로그인하면 `demo.user` 계정에 로그인되지 않는다(대소문자 구분).
 - BR-005·ERR-006: 기기 A 로그인 → 기기 B 로그인 → A 토큰 요청 401 AUTH_SESSION_REPLACED. A·B → C 순서로 로그인해도 A는 계속 REPLACED(30일 이내).
 - BR-006·ERR-005: `last_used_at`을 30일 전으로 바꾼 행 → 401 AUTH_SESSION_EXPIRED. 29일 전이면 통과하고 `last_used_at`이 갱신됨.
 - BR-011·ERR-008: SQL로 PIN 변경 → 다음 요청 401 AUTH_SESSION_REVOKED. 잠금 해제 SQL(PIN 그대로)은 로그인을 끝내지 않는다.

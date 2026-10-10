@@ -49,7 +49,7 @@ class WorkoutDayApiTest {
         operator.deleteAllAccounts()
         storage.deleteAll()
         clock.reset() // 2026-10-05T09:00Z, 18:00 in Seoul
-        me = users.signIn("joonhee.song")
+        me = users.signIn("demo.user")
     }
 
     @Test

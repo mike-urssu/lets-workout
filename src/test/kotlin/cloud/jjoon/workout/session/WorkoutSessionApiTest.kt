@@ -48,7 +48,7 @@ class WorkoutSessionApiTest {
     fun setUp() {
         operator.deleteAllAccounts()
         clock.reset()
-        me = users.signIn("joonhee.song")
+        me = users.signIn("demo.user")
     }
 
     @Test

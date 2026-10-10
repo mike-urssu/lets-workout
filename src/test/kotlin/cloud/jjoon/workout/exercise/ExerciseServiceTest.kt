@@ -34,7 +34,7 @@ class ExerciseServiceTest {
     @BeforeEach
     fun setUp() {
         operator.deleteAllAccounts()
-        me = users.signIn("joonhee.song")
+        me = users.signIn("demo.user")
         chest = operator.categoryId("가슴")
     }
 

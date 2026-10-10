@@ -26,13 +26,13 @@ class AccountSqlTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["joonhee.song", "joonhee.song2", "Joonhee.Song12"])
+    @ValueSource(strings = ["demo.user", "demo.user2", "Demo.User12"])
     fun `BR-002 이름-점-성 형식의 아이디는 발급할 수 있다`(loginId: String) {
         assertDoesNotThrow { operator.issueAccount(loginId, "123456") }
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["joonhee", "joonhee.", ".song", "joonhee.song1", "joonhee.song02", "joon hee.song", "준희.송"])
+    @ValueSource(strings = ["demo", "demo.", ".user", "demo.user1", "demo.user02", "de mo.user", "데모.유저"])
     fun `BR-002 형식에 맞지 않는 아이디는 발급할 수 없다`(loginId: String) {
         assertThrows<DataIntegrityViolationException> { operator.issueAccount(loginId, "123456") }
     }
@@ -40,20 +40,20 @@ class AccountSqlTest {
     @ParameterizedTest
     @ValueSource(strings = ["12345", "1234567", "12345a", "abcdef", "12 456"])
     fun `BR-003 숫자 6자리가 아닌 PIN은 발급할 수 없다`(pin: String) {
-        assertThrows<DataIntegrityViolationException> { operator.issueAccount("joonhee.song", pin) }
+        assertThrows<DataIntegrityViolationException> { operator.issueAccount("demo.user", pin) }
     }
 
     @Test
     fun `BR-003 PIN을 숫자 6자리가 아닌 값으로 재발급할 수 없다`() {
-        operator.issueAccount("joonhee.song", "123456")
+        operator.issueAccount("demo.user", "123456")
 
-        assertThrows<DataIntegrityViolationException> { operator.reissuePin("joonhee.song", "12345") }
+        assertThrows<DataIntegrityViolationException> { operator.reissuePin("demo.user", "12345") }
     }
 
     @Test
     fun `BR-002 같은 아이디는 두 번 발급할 수 없다`() {
-        operator.issueAccount("joonhee.song", "123456")
+        operator.issueAccount("demo.user", "123456")
 
-        assertThrows<DataIntegrityViolationException> { operator.issueAccount("joonhee.song", "654321") }
+        assertThrows<DataIntegrityViolationException> { operator.issueAccount("demo.user", "654321") }
     }
 }

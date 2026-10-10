@@ -523,22 +523,22 @@ cloud.jjoon.workout
 
 ```sql
 -- 계정 발급 (id, created_at은 DB가 채운다)
-INSERT INTO users (login_id, pin) VALUES ('joonhee.song', '123456');
+INSERT INTO users (login_id, pin) VALUES ('demo.user', '123456');
 
 -- PIN 재발급: 트리거가 그 계정의 활성 로그인을 즉시 끝낸다(REVOKED)
 UPDATE users SET pin = '654321', failed_pin_count = 0, locked_until = NULL, updated_at = now()
- WHERE login_id = 'joonhee.song';
+ WHERE login_id = 'demo.user';
 
 -- 잠금 해제
 UPDATE users SET failed_pin_count = 0, locked_until = NULL, updated_at = now()
- WHERE login_id = 'joonhee.song';
+ WHERE login_id = 'demo.user';
 
 -- 계정 삭제: 로그인과 운동 기록 등 모든 사용자 데이터가 함께 삭제된다(되돌릴 수 없음)
 -- 1) 먼저 사용자 ID를 확인한다
-SELECT id FROM users WHERE login_id = 'joonhee.song';
+SELECT id FROM users WHERE login_id = 'demo.user';
 -- 2) 오브젝트 저장소에서 그 사용자의 파일을 지운다 (아래 셸 명령)
 -- 3) 계정을 지운다
-DELETE FROM users WHERE login_id = 'joonhee.song';
+DELETE FROM users WHERE login_id = 'demo.user';
 ```
 
 ```sh

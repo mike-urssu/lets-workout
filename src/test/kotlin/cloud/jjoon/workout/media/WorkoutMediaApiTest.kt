@@ -53,7 +53,7 @@ class WorkoutMediaApiTest {
         operator.deleteAllAccounts()
         storage.deleteAll()
         clock.reset()
-        me = users.signIn("joonhee.song")
+        me = users.signIn("demo.user")
         session = sessionWithSet(me)
     }
 
