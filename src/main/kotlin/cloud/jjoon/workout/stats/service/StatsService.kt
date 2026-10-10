@@ -20,18 +20,16 @@ class StatsService(
 ) {
 
     /**
-     * API-STATS-001: up to 7 days the body part was trained before [before] (the latest ones when null), oldest first,
+     * API-STATS-001: up to 12 days the body part was trained before [before] (the latest ones when null), oldest first,
      * with its volume per day. Passing the newest shown day moves the window back by one such day (BR-016, BR-020).
      */
     @Transactional(readOnly = true)
     fun categoryVolumes(userId: UUID, categoryId: UUID, before: LocalDate?): CategoryVolumeTrendResponse {
         if (!exerciseQueryRepository.categoryExists(categoryId)) throw invalid("categoryId", "존재하지 않는 부위입니다.") // ERR-009
-        // One extra day tells whether earlier days exist (DEC-STATS-001).
-        val days = queryRepository.findWorkoutDays(userId, categoryId, before, DAYS + 1)
-        val dates = days.take(DAYS).sorted()
+        val (dates, hasPrevious) = window(queryRepository.findWorkoutDays(userId, categoryId, before, DAYS + 1))
         val volumes = queryRepository.sumVolumeByDay(userId, categoryId, dates)
         // Every day picked has the body part's sets, so each has a volume (BR-020).
-        return CategoryVolumeTrendResponse(dates, dates.map(volumes::getValue), hasPrevious = days.size > DAYS)
+        return CategoryVolumeTrendResponse(dates, dates.map(volumes::getValue), hasPrevious)
     }
 
     /** API-STATS-002: exercises of the body part the user has recorded, to pick for the exercise trend. */
@@ -43,7 +41,7 @@ class StatsService(
     }
 
     /**
-     * API-STATS-003: up to 7 days any of the exercises was done before [before] (the latest ones when null), oldest first,
+     * API-STATS-003: up to 12 days any of the exercises was done before [before] (the latest ones when null), oldest first,
      * with each exercise's volume per day. Paging works as in API-STATS-001 (BR-015, BR-016).
      */
     @Transactional(readOnly = true)
@@ -54,21 +52,32 @@ class StatsService(
         }
         val names = queryRepository.findExercises(userId, exerciseIds)
         if (names.size != exerciseIds.size) throw invalid("exerciseIds", "존재하지 않는 운동입니다.") // ERR-005
-        val days = queryRepository.findExerciseDays(userId, exerciseIds, before, DAYS + 1)
-        val dates = days.take(DAYS).sorted()
+        val (dates, hasPrevious) = window(queryRepository.findExerciseDays(userId, exerciseIds, before, DAYS + 1))
         val volumes = queryRepository.sumVolumeByExercise(userId, exerciseIds, dates)
         return ExerciseVolumeTrendResponse(
             dates = dates,
             exercises = exerciseIds.map { id -> ExerciseVolumes(id, names.getValue(id), dates.map { volumes[it to id] }) },
-            hasPrevious = days.size > DAYS,
+            hasPrevious = hasPrevious,
         )
+    }
+
+    /**
+     * The shown days, oldest first, out of latest-first [days] fetched one past [DAYS]: at most [DAYS] of them, none
+     * before the same date [MONTHS] months back from the newest (the month's last day if it has no such date).
+     * Any day left out means earlier days exist (BR-004, BR-007, BR-021, DEC-STATS-001, DEC-STATS-014).
+     */
+    private fun window(days: List<LocalDate>): Pair<List<LocalDate>, Boolean> {
+        val from = days.firstOrNull()?.minusMonths(MONTHS) ?: return emptyList<LocalDate>() to false
+        val shown = days.take(DAYS).takeWhile { !it.isBefore(from) }
+        return shown.sorted() to (days.size > shown.size)
     }
 
     private fun invalid(field: String, reason: String) =
         BusinessException(ErrorCode.VALIDATION_FAILED, errors = listOf(ErrorResponse.FieldError(field, reason)))
 
     companion object {
-        const val DAYS = 7 // BR-004
+        const val DAYS = 12 // BR-004
+        const val MONTHS = 3L // BR-021
     }
 }
 

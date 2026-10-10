@@ -74,24 +74,49 @@ class StatsApiTest {
     fun `REQ-STATS-002 BR-016 BR-020 넘기면 고른 부위를 한 날 하나씩 밀리고 그 부위를 처음 한 날에서 멈춘다`() {
         workout(me, "스쿼트")                                       // 10-05: legs only
         clock.advance(Duration.ofDays(1))
-        repeat(10) {                                               // 10-06 … 10-15: chest
+        repeat(15) {                                               // 10-06 … 10-20: chest
             workout(me, "벤치프레스")
             clock.advance(Duration.ofDays(1))
         }
 
         categoryVolumes().andExpect {
-            jsonPath("$.dates") { value(contains(*days(9..15))) }
+            jsonPath("$.dates") { value(contains(*days(9..20))) }
             jsonPath("$.hasPrevious") { value(true) }
         }
-        categoryVolumes(before = "2026-10-15").andExpect {
+        categoryVolumes(before = "2026-10-20").andExpect {
             status { isOk() }
-            jsonPath("$.dates") { value(contains(*days(8..14))) }
+            jsonPath("$.dates") { value(contains(*days(8..19))) }
             jsonPath("$.hasPrevious") { value(true) }
         }
-        categoryVolumes(before = "2026-10-14").andExpect { jsonPath("$.dates") { value(contains(*days(7..13))) } }
-        categoryVolumes(before = "2026-10-13").andExpect {
-            jsonPath("$.dates") { value(contains(*days(6..12))) }
+        categoryVolumes(before = "2026-10-19").andExpect { jsonPath("$.dates") { value(contains(*days(7..18))) } }
+        categoryVolumes(before = "2026-10-18").andExpect {
+            jsonPath("$.dates") { value(contains(*days(6..17))) }
             jsonPath("$.hasPrevious") { value(false) }               // 10-05 is a workout day, but not for chest
+        }
+    }
+
+    @Test
+    fun `BR-021 가장 최근 날로부터 3개월 전 같은 날짜까지만 보여주고 넘기면 그 경계도 옮겨진다`() {
+        workout(me, "벤치프레스")                                   // 10-05
+        clock.advance(Duration.ofDays(1))
+        workout(me, "벤치프레스")                                   // 10-06: exactly 3 months before 01-06
+        repeat(4) {                                                // 92 days, in steps the login outlives (30 days idle)
+            clock.advance(Duration.ofDays(23))
+            categoryVolumes()
+        }
+        workout(me, "벤치프레스")                                   // 2027-01-06
+
+        categoryVolumes().andExpect {
+            jsonPath("$.dates") { value(contains("2026-10-06", "2027-01-06")) }
+            jsonPath("$.hasPrevious") { value(true) }               // 10-05 is left out though fewer than 12
+        }
+        exerciseVolumes(listOf("벤치프레스")).andExpect {
+            jsonPath("$.dates") { value(contains("2026-10-06", "2027-01-06")) }
+            jsonPath("$.hasPrevious") { value(true) }
+        }
+        categoryVolumes(before = "2027-01-06").andExpect {
+            jsonPath("$.dates") { value(contains("2026-10-05", "2026-10-06")) }
+            jsonPath("$.hasPrevious") { value(false) }
         }
     }
 
@@ -214,18 +239,18 @@ class StatsApiTest {
     fun `REQ-STATS-004 BR-016 종목별 추이를 넘기면 고른 종목을 한 날 하나씩 밀리고 처음 한 날에서 멈춘다`() {
         workout(me, "스쿼트")                                       // 10-05: not picked
         clock.advance(Duration.ofDays(1))
-        repeat(10) {                                               // 10-06 … 10-15
+        repeat(15) {                                               // 10-06 … 10-20
             workout(me, "벤치프레스")
             clock.advance(Duration.ofDays(1))
         }
 
         exerciseVolumes(listOf("벤치프레스")).andExpect {
-            jsonPath("$.dates") { value(contains(*days(9..15))) }
+            jsonPath("$.dates") { value(contains(*days(9..20))) }
             jsonPath("$.hasPrevious") { value(true) }
         }
-        exerciseVolumes(listOf("벤치프레스"), before = "2026-10-15").andExpect { jsonPath("$.dates") { value(contains(*days(8..14))) } }
-        exerciseVolumes(listOf("벤치프레스"), before = "2026-10-13").andExpect {
-            jsonPath("$.dates") { value(contains(*days(6..12))) }
+        exerciseVolumes(listOf("벤치프레스"), before = "2026-10-20").andExpect { jsonPath("$.dates") { value(contains(*days(8..19))) } }
+        exerciseVolumes(listOf("벤치프레스"), before = "2026-10-18").andExpect {
+            jsonPath("$.dates") { value(contains(*days(6..17))) }
             jsonPath("$.hasPrevious") { value(false) }
         }
     }
