@@ -43,6 +43,26 @@ class StatsQueryRepository(private val dsl: DSLContext) {
             .fetch(ws.PERFORMED_DATE)
     }
 
+    /** Days the user recorded sets of any of the exercises in a completed session (BR-015), like [findWorkoutDays]. */
+    fun findExerciseDays(userId: UUID, exerciseIds: Collection<UUID>, before: LocalDate?, limit: Int): List<LocalDate> {
+        val ws = WORKOUT_SESSION
+        val wse = WORKOUT_SESSION_EXERCISE
+        return dsl.selectDistinct(ws.PERFORMED_DATE)
+            .from(ws)
+            .where(ws.USER_ID.eq(userId))
+            .and(ws.STATUS.eq(WorkoutSessionStatus.COMPLETED.name))
+            .and(before?.let(ws.PERFORMED_DATE::lt) ?: noCondition())
+            .andExists(
+                selectOne().from(wse)
+                    .join(WORKOUT_SET).on(WORKOUT_SET.WORKOUT_SESSION_EXERCISE_ID.eq(wse.ID))
+                    .where(wse.WORKOUT_SESSION_ID.eq(ws.ID))
+                    .and(wse.EXERCISE_ID.`in`(exerciseIds)),
+            )
+            .orderBy(ws.PERFORMED_DATE.desc())
+            .limit(limit)
+            .fetch(ws.PERFORMED_DATE)
+    }
+
     /** The body part's exercises the user has sets for in a completed session, in list order (BR-011, BR-017). */
     fun findRecordedExercises(userId: UUID, categoryId: UUID): List<StatsExercise> {
         val ws = WORKOUT_SESSION

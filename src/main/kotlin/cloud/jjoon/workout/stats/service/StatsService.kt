@@ -42,23 +42,25 @@ class StatsService(
         return queryRepository.findRecordedExercises(userId, categoryId)
     }
 
-    /** API-STATS-003: each exercise's volume on the given days, the same axis as the body-part trend (BR-015). */
+    /**
+     * API-STATS-003: up to 7 days any of the exercises was done before [before] (the latest ones when null), oldest first,
+     * with each exercise's volume per day. Paging works as in API-STATS-001 (BR-015, BR-016).
+     */
     @Transactional(readOnly = true)
-    fun exerciseVolumes(userId: UUID, exerciseIds: List<UUID>, dates: List<LocalDate>): ExerciseVolumeTrendResponse {
+    fun exerciseVolumes(userId: UUID, exerciseIds: List<UUID>, before: LocalDate?): ExerciseVolumeTrendResponse {
         // No count limit: distinct existing exercises are bounded by the catalog (DEC-STATS-009).
         if (exerciseIds.isEmpty() || exerciseIds.toSet().size != exerciseIds.size) {
             throw invalid("exerciseIds", "1개 이상 겹치지 않게 골라야 합니다.")
         }
-        if (dates.size !in 1..DAYS || dates.toSet().size != dates.size) {
-            throw invalid("dates", "1개 이상 ${DAYS}개 이하의 서로 다른 날짜여야 합니다.") // BR-004
-        }
         val names = queryRepository.findExercises(userId, exerciseIds)
         if (names.size != exerciseIds.size) throw invalid("exerciseIds", "존재하지 않는 운동입니다.") // ERR-005
-        val sorted = dates.sorted()
-        val volumes = queryRepository.sumVolumeByExercise(userId, exerciseIds, sorted)
+        val days = queryRepository.findExerciseDays(userId, exerciseIds, before, DAYS + 1)
+        val dates = days.take(DAYS).sorted()
+        val volumes = queryRepository.sumVolumeByExercise(userId, exerciseIds, dates)
         return ExerciseVolumeTrendResponse(
-            dates = sorted,
-            exercises = exerciseIds.map { id -> ExerciseVolumes(id, names.getValue(id), sorted.map { volumes[it to id] }) },
+            dates = dates,
+            exercises = exerciseIds.map { id -> ExerciseVolumes(id, names.getValue(id), dates.map { volumes[it to id] }) },
+            hasPrevious = days.size > DAYS,
         )
     }
 
@@ -72,6 +74,6 @@ class StatsService(
 
 data class CategoryVolumeTrendResponse(val dates: List<LocalDate>, val volumes: List<BigDecimal>, val hasPrevious: Boolean)
 
-data class ExerciseVolumeTrendResponse(val dates: List<LocalDate>, val exercises: List<ExerciseVolumes>)
+data class ExerciseVolumeTrendResponse(val dates: List<LocalDate>, val exercises: List<ExerciseVolumes>, val hasPrevious: Boolean)
 
 data class ExerciseVolumes(val id: UUID, val name: String, val volumes: List<BigDecimal?>)

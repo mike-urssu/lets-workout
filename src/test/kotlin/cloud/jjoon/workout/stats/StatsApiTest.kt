@@ -183,43 +183,67 @@ class StatsApiTest {
     }
 
     @Test
-    fun `REQ-STATS-004 BR-009 고른 종목마다 받은 날짜의 볼륨을 요청 순서로 주고 안 한 날은 값이 없다`() {
+    fun `REQ-STATS-004 BR-009 BR-015 고른 종목 중 하나라도 한 날마다 종목별 볼륨을 요청 순서로 주고 안 한 날은 값이 없다`() {
         workout(me, "벤치프레스", "인클라인 벤치프레스")              // 10-05: 600, 600
         workout(users.signIn("other.user"), "벤치프레스")          // someone else's, same day
         clock.advance(Duration.ofDays(1))
         workout(me, "벤치프레스", weight = 70)                      // 10-06: 700
         clock.advance(Duration.ofDays(1))
-        workout(me, "스쿼트")                                       // 10-07
+        workout(me, "펙덱 플라이")                                  // 10-07: chest, but not picked
+        clock.advance(Duration.ofDays(1))
+        workout(me, "인클라인 벤치프레스", complete = false)          // 10-08: in progress, not a workout day yet
 
-        exerciseVolumes(listOf("인클라인 벤치프레스", "벤치프레스"), listOf("2026-10-07", "2026-10-05", "2026-10-06")).andExpect {
+        exerciseVolumes(listOf("인클라인 벤치프레스", "벤치프레스")).andExpect {
             status { isOk() }
-            jsonPath("$.dates") { value(contains("2026-10-05", "2026-10-06", "2026-10-07")) }
+            jsonPath("$.dates") { value(contains("2026-10-05", "2026-10-06")) }
             jsonPath("$.exercises[*].name") { value(contains("인클라인 벤치프레스", "벤치프레스")) }
-            jsonPath("$.exercises[0].volumes") { value(contains<Any?>(600.0, null, null)) }
-            jsonPath("$.exercises[1].volumes") { value(contains<Any?>(600.0, 700.0, null)) }
+            jsonPath("$.exercises[0].volumes") { value(contains<Any?>(600.0, null)) }
+            jsonPath("$.exercises[1].volumes") { value(contains<Any?>(600.0, 700.0)) }
+            jsonPath("$.hasPrevious") { value(false) }
+        }
+        exerciseVolumes(listOf("인클라인 벤치프레스")).andExpect { jsonPath("$.dates") { value(contains("2026-10-05")) } }
+        exerciseVolumes(listOf("스쿼트")).andExpect {                // ERR-006: never done
+            status { isOk() }
+            jsonPath("$.dates") { isEmpty() }
+            jsonPath("$.exercises[0].volumes") { isEmpty() }
+            jsonPath("$.hasPrevious") { value(false) }
         }
     }
 
     @Test
-    fun `ERR-005 종목은 1개 이상, 날짜는 1~7개이고 중복이나 없는 종목은 입력값 오류다`() {
-        val four = listOf("벤치프레스", "스미스 벤치프레스", "인클라인 벤치프레스", "펙덱 플라이")
+    fun `REQ-STATS-004 BR-016 종목별 추이를 넘기면 고른 종목을 한 날 하나씩 밀리고 처음 한 날에서 멈춘다`() {
+        workout(me, "스쿼트")                                       // 10-05: not picked
+        clock.advance(Duration.ofDays(1))
+        repeat(10) {                                               // 10-06 … 10-15
+            workout(me, "벤치프레스")
+            clock.advance(Duration.ofDays(1))
+        }
+
+        exerciseVolumes(listOf("벤치프레스")).andExpect {
+            jsonPath("$.dates") { value(contains(*days(9..15))) }
+            jsonPath("$.hasPrevious") { value(true) }
+        }
+        exerciseVolumes(listOf("벤치프레스"), before = "2026-10-15").andExpect { jsonPath("$.dates") { value(contains(*days(8..14))) } }
+        exerciseVolumes(listOf("벤치프레스"), before = "2026-10-13").andExpect {
+            jsonPath("$.dates") { value(contains(*days(6..12))) }
+            jsonPath("$.hasPrevious") { value(false) }
+        }
+    }
+
+    @Test
+    fun `ERR-005 종목은 1개 이상이고 중복이나 없는 종목은 입력값 오류다`() {
         val legs = listOf("스쿼트", "레그 프레스", "레그 익스텐션", "레그 컬", "런지", "힙 어덕션", "힙 어브덕션", "힙 쓰러스트")
-        val sevenDays = days(1..7).toList()
-        exerciseVolumes(four, sevenDays).andExpect { status { isOk() } }
-        exerciseVolumes(legs, sevenDays).andExpect { status { isOk() } } // BR-017: a whole body part, no count limit
+        exerciseVolumes(legs).andExpect { status { isOk() } } // BR-017: a whole body part, no count limit
 
         fun rejects(result: ResultActionsDsl, field: String) = result.andExpect {
             status { isBadRequest() }
             jsonPath("$.code") { value("VALIDATION_FAILED") }
             jsonPath("$.errors[0].field") { value(field) }
         }
-        rejects(exerciseVolumes(emptyList(), sevenDays), "exerciseIds")
-        rejects(exerciseVolumes(listOf("벤치프레스", "벤치프레스"), sevenDays), "exerciseIds")
-        rejects(exerciseVolumesById(listOf(UUID.randomUUID().toString()), sevenDays), "exerciseIds") // ERR-005
-        rejects(exerciseVolumes(four, days(1..8).toList()), "dates")
-        rejects(exerciseVolumes(four, emptyList()), "dates")
-        rejects(exerciseVolumes(four, listOf("2026-10-01", "2026-10-01")), "dates")
-        exerciseVolumes(four, listOf("2026-10-32")).andExpect { status { isBadRequest() } }
+        rejects(exerciseVolumes(emptyList()), "exerciseIds")
+        rejects(exerciseVolumes(listOf("벤치프레스", "벤치프레스")), "exerciseIds")
+        rejects(exerciseVolumesById(listOf(UUID.randomUUID().toString())), "exerciseIds") // ERR-005
+        exerciseVolumes(legs, before = "2026-10-32").andExpect { status { isBadRequest() } } // ERR-002
     }
 
     @Test
@@ -242,14 +266,14 @@ class StatsApiTest {
         categoryVolumes("하체").andExpect { jsonPath("$.volumes") { value(contains(byName.getValue("하체"))) } }
     }
 
-    private fun exerciseVolumes(exercises: List<String>, dates: List<String>): ResultActionsDsl =
-        exerciseVolumesById(exercises.map { operator.exerciseId(it, me.id).toString() }, dates)
+    private fun exerciseVolumes(exercises: List<String>, before: String? = null): ResultActionsDsl =
+        exerciseVolumesById(exercises.map { operator.exerciseId(it, me.id).toString() }, before)
 
-    private fun exerciseVolumesById(exerciseIds: List<String>, dates: List<String>): ResultActionsDsl =
+    private fun exerciseVolumesById(exerciseIds: List<String>, before: String? = null): ResultActionsDsl =
         mockMvc.get("/api/v1/stats/exercise-volumes") {
             header("Authorization", "Bearer ${me.token}")
             exerciseIds.forEach { param("exerciseIds", it) }
-            dates.forEach { param("dates", it) }
+            before?.let { param("before", it) }
         }
 
     private fun exercises(categoryId: String?): ResultActionsDsl =

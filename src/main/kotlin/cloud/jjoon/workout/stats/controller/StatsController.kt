@@ -47,10 +47,10 @@ class StatsController(
         @AuthenticationPrincipal userId: UUID,
         // Optional here so that none at all gets the same field error as too many (checked in the service).
         @RequestParam(required = false) exerciseIds: List<UUID>?,
-        @RequestParam(required = false) dates: List<String>?,
+        @RequestParam before: String?,
     ): ExerciseVolumeTrendResponse {
         expiredSessionCleaner.cleanUp(userId)
-        return statsService.exerciseVolumes(userId, exerciseIds.orEmpty(), dates.orEmpty().map(::date))
+        return statsService.exerciseVolumes(userId, exerciseIds.orEmpty(), before?.let(::date))
     }
 
     /** ERR-002: a malformed date is an input error. */
